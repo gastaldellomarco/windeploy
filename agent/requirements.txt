@@ -1,0 +1,7 @@
+customtkinter==5.2.2
+requests==2.31.0
+pyinstaller==6.4.0
+wmi==1.5.1
+# Notes:
+# - Install these into a clean virtualenv to keep the resulting exe size smaller.
+# - When building with PyInstaller, remember to include CustomTkinter assets with --add-data.
