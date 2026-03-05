@@ -37,9 +37,19 @@ class CheckRole
             ->toArray();
 
         // Controlla con Spatie se disponibile, altrimenti usa la colonna enum
+        $userRole = (string) $user->ruolo; // Cast enum to string
         $hasRole = method_exists($user, 'hasRole')
             ? $user->hasRole($allowedRoles)
-            : in_array($user->ruolo, $allowedRoles, true);
+            : in_array($userRole, $allowedRoles, true);
+
+        // Debug: log the check result
+        \Log::debug('CheckRole middleware', [
+            'user_id' => $user->id,
+            'user_ruolo_raw' => $user->ruolo,
+            'user_ruolo_string' => $userRole,
+            'allowed_roles' => $allowedRoles,
+            'has_role' => $hasRole,
+        ]);
 
         if (! $hasRole) {
             return response()->json([
