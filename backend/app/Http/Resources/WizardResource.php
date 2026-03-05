@@ -2,39 +2,33 @@
 
 namespace App\Http\Resources;
 
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class WizardResource extends JsonResource
 {
-    public function toArray(Request $request): array
+    public function toArray($request)
     {
+        $config = $this->configurazione;
+        // Rimuovi eventuali campi cifrati dalla risposta pubblica
+        if (isset($config['utente_admin']['password_encrypted'])) {
+            unset($config['utente_admin']['password_encrypted']);
+        }
+        if (isset($config['extras']['wifi']['password_encrypted'])) {
+            unset($config['extras']['wifi']['password_encrypted']);
+        }
+
         return [
-            'id' => $this->id,
-
-            // Names
-            'nome' => $this->nome,
-            'name' => $this->nome, // optional fallback
-
-            // Code: support both DB naming styles
-            'codiceunivoco' => $this->codiceunivoco ?? $this->codice_univoco ?? null,
-
-            // Status
-            'stato' => $this->stato,
-
-            // Timestamps: expose both, frontend reads createdat OR createdAt
-            'createdat' => $this->created_at?->toISOString(),
-            'createdAt' => $this->created_at?->toISOString(),
-
-            // Useful fields (don’t leak secrets!)
-            'templateid' => $this->templateid ?? $this->template_id ?? null,
-            'userid' => $this->userid ?? $this->user_id ?? null,
-
-            // IMPORTANT: do NOT return plain passwords; ideally don’t return configurazione in listings
-            'configurazione' => $this->when(
-                $request->routeIs('wizards.show'),
-                $this->configurazione
-            ),
+            'id'               => $this->id,
+            'nome'             => $this->nome,
+            'codice_univoco'   => $this->codice_univoco,
+            'stato'            => $this->stato,
+            'configurazione'   => $config,
+            'expires_at'       => $this->expires_at?->toIso8601String(),
+            'used_at'          => $this->used_at?->toIso8601String(),
+            'created_at'       => $this->created_at?->toIso8601String(),
+            'updated_at'       => $this->updated_at?->toIso8601String(),
+            'user'             => new UserResource($this->whenLoaded('user')),
+            'template'         => new TemplateResource($this->whenLoaded('template')),
         ];
     }
 }

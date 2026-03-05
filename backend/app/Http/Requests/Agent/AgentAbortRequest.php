@@ -6,16 +6,16 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class AgentAbortRequest extends FormRequest
 {
-    public function authorize()
+    public function authorize(): bool
     {
         return true;
     }
 
-    public function rules()
+    public function rules(): array
     {
         return [
             'execution_log_id' => 'required|integer|exists:execution_logs,id',
-            'motivo'           => 'required|string|max:1000',
+            'motivo'           => 'nullable|string|max:1000',
         ];
     }
 }

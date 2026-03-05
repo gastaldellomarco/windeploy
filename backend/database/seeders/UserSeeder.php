@@ -1,45 +1,67 @@
 <?php
-// database/seeders/UserSeeder.php — Versione più robusta (opzionale)
+// database/seeders/UserSeeder.php
 
 namespace Database\Seeders;
 
+use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class UserSeeder extends Seeder
 {
     public function run(): void
     {
-        // 1 Admin
-        DB::table('users')->insert([
-            'nome'          => 'Marco Gastaldello',
-            'email'         => 'mgastaldello06@gmail.com',
-            'password'      => Hash::make('BW22-flzz'),
-            'ruolo'         => 'admin',
-            'attivo'        => true,
-            'last_login'    => now()->subHours(2),
-            'last_login_ip' => '127.0.0.1',
-            'created_at'    => now(),
-            'updated_at'    => now(),
-        ]);
+        // Usiamo firstOrCreate per rendere il seeder idempotente:
+        // se girato due volte non duplica gli utenti.
 
-        // 2 Tecnici (stesso pattern)
-        $tecnici = [
-            ['Luca Bianchi', 'luca@windeploy.local', 'Tecnico1234!'],
-            ['Sara Verdi', 'sara@windeploy.local', 'Tecnico1234!'],
-        ];
+        // Admin principale
+        User::firstOrCreate(
+            ['email' => 'admin@windeploy.local'],
+            [
+                'nome'          => 'Admin WinDeploy',
+                'password'      => Hash::make('Admin@1234!'),
+                'ruolo'         => 'admin',
+                'attivo'        => true,
+                'last_login'    => now()->subHours(3),
+                'last_login_ip' => '127.0.0.1',
+            ]
+        );
 
-        foreach ($tecnici as $tecnico) {
-            DB::table('users')->insert([
-                'nome'          => $tecnico[0],
-                'email'         => $tecnico[1],
-                'password'      => Hash::make($tecnico[2]),
+        // Tecnico 1 — proprietario dei template e wizard nel seeder
+        User::firstOrCreate(
+            ['email' => 'tecnico1@windeploy.local'],
+            [
+                'nome'          => 'Marco Ferretti',
+                'password'      => Hash::make('Tecnico@1234!'),
                 'ruolo'         => 'tecnico',
                 'attivo'        => true,
-                'created_at'    => now(),
-                'updated_at'    => now(),
-            ]);
-        }
+                'last_login'    => now()->subDays(1),
+                'last_login_ip' => '192.168.1.10',
+            ]
+        );
+
+        // Tecnico 2
+        User::firstOrCreate(
+            ['email' => 'tecnico2@windeploy.local'],
+            [
+                'nome'          => 'Sara Lombardi',
+                'password'      => Hash::make('Tecnico@1234!'),
+                'ruolo'         => 'tecnico',
+                'attivo'        => true,
+                'last_login'    => now()->subDays(3),
+                'last_login_ip' => '192.168.1.11',
+            ]
+        );
+
+        // Viewer (solo lettura — accede ai report)
+        User::firstOrCreate(
+            ['email' => 'viewer@windeploy.local'],
+            [
+                'nome'     => 'Responsabile IT',
+                'password' => Hash::make('Viewer@1234!'),
+                'ruolo'    => 'viewer',
+                'attivo'   => true,
+            ]
+        );
     }
 }

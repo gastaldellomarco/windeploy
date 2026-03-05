@@ -1,7 +1,5 @@
-# File: screen_uninstall.py
-# Path: windeploy\agent\gui\screens\screen_uninstall.py
-
 import customtkinter as ctk
+
 import threading
 from system_scanner import SystemScanner
 from config import COLORS

@@ -1,8 +1,10 @@
 <?php
+// app/Models/SoftwareLibrary.php
 
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class SoftwareLibrary extends Model
@@ -24,9 +26,14 @@ class SoftwareLibrary extends Model
     ];
 
     protected $casts = [
-        'attivo' => 'boolean',
+        'attivo'     => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'deleted_at' => 'datetime',
     ];
+
+    public function aggiuntoDA(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'aggiunto_da');
+    }
 }

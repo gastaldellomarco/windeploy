@@ -32,10 +32,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // Use our application Authenticate middleware (prevents redirect to 'login' route)
         $middleware->alias([
             'auth' => \App\Http\Middleware\Authenticate::class,
-            // Spatie permission middleware aliases used in routes (role, permission, role_or_permission)
-            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
-            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
-            'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            // Use custom CheckRole middleware (reads user->ruolo field, not Spatie roles table)
+            'role' => \App\Http\Middleware\CheckRole::class,
         ]);
 
     // Ensure framework won't fallback to route('login') for unauthenticated requests.

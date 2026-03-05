@@ -11,20 +11,30 @@ return new class extends Migration
     {
         Schema::create('templates', function (Blueprint $table) {
             $table->id();
-            $table->string('nome', 150);
+            $table->string('nome', 255);
             $table->text('descrizione')->nullable();
+
+            // cascadeOnDelete: se l'utente viene eliminato (soft delete non basta,
+            // ma con softDeletes sulla tabella users non arriveremo mai qui in prod).
+            // Scelta: cascadeOnDelete per coerenza — se un admin cancella fisicamente
+            // un utente test, i suoi template personali spariscono con lui.
+            // I template globali (scope='globale') sono sempre di un admin esistente.
             $table->foreignId('user_id')
                   ->constrained('users')
-                  ->restrictOnDelete();                          // blocca cancellazione utente con template
+                  ->cascadeOnDelete();
+
             $table->enum('scope', ['globale', 'personale'])->default('personale');
-            $table->json('configurazione');                      // struttura identica a wizards.configurazione
-            $table->timestamps();                                // created_at + updated_at
-            $table->softDeletes();
+
+            // JSON con stessa struttura di wizards.configurazione (parziale o completa)
+            $table->json('configurazione');
+
+            $table->timestamps();
+            $table->softDeletes(); // preserva template eliminati per storico wizard
 
             // Indici
-            $table->index('scope');
             $table->index('user_id');
-            $table->index(['scope', 'user_id']);                 // query: "miei template + globali"
+            $table->index('scope');
+            $table->index(['user_id', 'scope']); // query: "miei template + tutti i globali"
         });
     }
 

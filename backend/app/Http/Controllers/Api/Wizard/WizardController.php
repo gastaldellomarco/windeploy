@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Api\Wizard;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\WizardStoreRequest;
-use App\Http\Requests\WizardUpdateRequest;
+use App\Http\Requests\Wizard\WizardGenerateCodeRequest;
+use App\Http\Requests\Wizard\WizardStoreRequest;
+use App\Http\Requests\Wizard\WizardUpdateRequest;
+use App\Http\Resources\ExecutionLogResource;
 use App\Http\Resources\WizardResource;
-use App\Models\Wizard;
 use App\Models\ExecutionLog;
+use App\Models\Wizard;
+use App\Services\EncryptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Gate;
@@ -15,11 +18,15 @@ use Symfony\Component\HttpFoundation\Response;
 
 class WizardController extends Controller
 {
+    protected EncryptionService $encryption;
+
+    public function __construct(EncryptionService $encryption)
+    {
+        $this->encryption = $encryption;
+    }
+
     /**
      * Elenco wizard con filtri.
-     * - Admin: tutti i wizard
-     * - Tecnico/Viewer: solo i propri wizard
-     * Filtri: ?stato=bozza&da_data=2025-01-01&a_data=2025-12-31&user_id=2 (solo admin)
      */
     public function index(Request $request)
     {
@@ -27,20 +34,16 @@ class WizardController extends Controller
 
         $query = Wizard::with('user', 'template');
 
-        // Filtro per utente (non admin vedono solo i propri)
         if ($user->ruolo !== 'admin') {
             $query->where('user_id', $user->id);
         } elseif ($request->has('user_id') && $request->user_id) {
-            // Admin può filtrare per user_id specifico
             $query->where('user_id', $request->user_id);
         }
 
-        // Filtro per stato
         if ($request->has('stato') && in_array($request->stato, Wizard::STATI)) {
             $query->where('stato', $request->stato);
         }
 
-        // Filtro per data creazione (range)
         if ($request->has('da_data') && $request->da_data) {
             $query->whereDate('created_at', '>=', $request->da_data);
         }
@@ -54,13 +57,12 @@ class WizardController extends Controller
     }
 
     /**
-     * Crea un nuovo wizard (solo admin/tecnico).
+     * Crea un nuovo wizard.
      */
     public function store(WizardStoreRequest $request)
     {
         $user = $request->user();
 
-        // Viewer non può creare
         if ($user->ruolo === 'viewer') {
             return response()->json(['message' => 'Azione non consentita.'], Response::HTTP_FORBIDDEN);
         }
@@ -70,11 +72,28 @@ class WizardController extends Controller
         // Genera codice univoco
         $data['codice_univoco'] = $this->generateUniqueCode();
 
-        // Imposta user_id e stato iniziale
+        // Cifra password con EncryptionService (usa wizard id ancora non noto, quindi salt provvisorio)
+        // Dovremo salvare prima il wizard per avere l'id, poi aggiornare la configurazione cifrata.
+        // Oppure usiamo il codice_univoco come salt (disponibile subito).
+        $config = $data['configurazione'];
+        $salt = $data['codice_univoco']; // salt basato sul codice (univoco e noto subito)
+
+        if (isset($config['utente_admin']['password'])) {
+            $plain = $config['utente_admin']['password'];
+            $config['utente_admin']['password_encrypted'] = $this->encryption->encryptForWizard($plain, $salt);
+            unset($config['utente_admin']['password']);
+        }
+        if (isset($config['extras']['wifi']['password'])) {
+            $plain = $config['extras']['wifi']['password'];
+            $config['extras']['wifi']['password_encrypted'] = $this->encryption->encryptForWizard($plain, $salt);
+            unset($config['extras']['wifi']['password']);
+        }
+        $data['configurazione'] = $config;
+
         $data['user_id'] = $user->id;
         $data['stato'] = 'bozza';
+        $data['expires_at'] = now()->addHours(24);
 
-        // Salva wizard
         $wizard = Wizard::create($data);
 
         return new WizardResource($wizard);
@@ -85,7 +104,6 @@ class WizardController extends Controller
      */
     public function show(Wizard $wizard)
     {
-        // Autorizzazione: viewer e tecnico possono vedere solo i propri, admin tutto
         if (Gate::denies('view', $wizard)) {
             return response()->json(['message' => 'Accesso negato.'], Response::HTTP_FORBIDDEN);
         }
@@ -98,23 +116,31 @@ class WizardController extends Controller
      */
     public function update(WizardUpdateRequest $request, Wizard $wizard)
     {
-        // Autorizzazione
         if (Gate::denies('update', $wizard)) {
             return response()->json(['message' => 'Azione non consentita.'], Response::HTTP_FORBIDDEN);
         }
 
-        // Solo se in bozza
         if ($wizard->stato !== 'bozza') {
             return response()->json(['message' => 'Solo i wizard in bozza possono essere modificati.'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $wizard->update($request->validated());
+        $data = $request->validated();
+
+        // Se viene fornita una nuova password, cifrarla
+        if (isset($data['configurazione']['utente_admin']['password'])) {
+            $plain = $data['configurazione']['utente_admin']['password'];
+            $salt = $wizard->codice_univoco;
+            $data['configurazione']['utente_admin']['password_encrypted'] = $this->encryption->encryptForWizard($plain, $salt);
+            unset($data['configurazione']['utente_admin']['password']);
+        }
+
+        $wizard->update($data);
 
         return new WizardResource($wizard);
     }
 
     /**
-     * Soft delete wizard (solo proprietario/admin).
+     * Soft delete wizard.
      */
     public function destroy(Wizard $wizard)
     {
@@ -128,7 +154,28 @@ class WizardController extends Controller
     }
 
     /**
-     * Restituisce lo stato in tempo reale dell'esecuzione (ultimo log).
+     * Genera un nuovo codice univoco e resetta expires_at.
+     */
+    public function generateCode(WizardGenerateCodeRequest $request, Wizard $wizard)
+    {
+        if (Gate::denies('update', $wizard)) {
+            return response()->json(['message' => 'Azione non consentita.'], Response::HTTP_FORBIDDEN);
+        }
+
+        $nuovoCodice = $this->generateUniqueCode();
+
+        $wizard->codice_univoco = $nuovoCodice;
+        $wizard->expires_at = now()->addHours(24);
+        $wizard->save();
+
+        return response()->json([
+            'codice_univoco' => $nuovoCodice,
+            'expires_at'     => $wizard->expires_at->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * Monitor polling: restituisce l'execution log associato al wizard.
      */
     public function monitor(Wizard $wizard)
     {
@@ -136,73 +183,19 @@ class WizardController extends Controller
             return response()->json(['message' => 'Accesso negato.'], Response::HTTP_FORBIDDEN);
         }
 
-        // Use actual DB columns (snake_case in this project)
         $log = ExecutionLog::where('wizard_id', $wizard->id)
             ->latest('started_at')
             ->first();
 
-        // Build a canonical response schema for the monitor endpoint.
-        $wizardPayload = [
-            'id' => $wizard->id,
-            'name' => $wizard->nome ?? $wizard->name ?? null,
-            'code' => $wizard->codice_univoco ?? null,
-            'stato' => $wizard->stato,
-        ];
-
-        $pcPayload = null;
-        $hardwarePayload = null;
-        $steps = [];
-        $summary = null;
-
-        if ($log) {
-            $pcPayload = ['name' => $log->pc_nome_originale ?? null];
-            $hardwarePayload = $log->hardware_info ?? null;
-
-            $rawSteps = is_array($log->log_dettagliato) ? $log->log_dettagliato : [];
-            foreach ($rawSteps as $idx => $s) {
-                $steps[] = [
-                    'id' => $s['id'] ?? ($idx + 1),
-                    'name' => $s['nome'] ?? $s['step'] ?? $s['name'] ?? 'Step ' . ($idx + 1),
-                    'status' => $s['esito'] ?? $s['stato'] ?? $s['status'] ?? null,
-                    'message' => $s['dettaglio'] ?? $s['messaggio'] ?? $s['message'] ?? null,
-                    'timestamp' => isset($s['timestamp']) ? (string) $s['timestamp'] : null,
-                ];
-            }
-
-            if (isset($log->sommario) && is_array($log->sommario)) {
-                $summary = $log->sommario;
-            }
-        }
-
-        $executionPayload = [
-            'id' => $log ? $log->id : null,
-            'wizardstato' => $wizard->stato,
-            'executionstato' => $log ? $log->stato : null,
-            'pending' => $log ? false : true,
-            'started_at' => $log && $log->started_at ? $log->started_at->toIso8601String() : null,
-            'completed_at' => $log && $log->completed_at ? $log->completed_at->toIso8601String() : null,
-        ];
-
-        $response = [
-            'schema_version' => '1',
-            'wizard' => $wizardPayload,
-            'pc' => $pcPayload,
-            'hardware' => $hardwarePayload,
-            'execution' => $executionPayload,
-            'steps' => $steps,
-            'summary' => $summary,
-            'legacy' => [
-                'stato' => $log ? $log->stato : $wizard->stato,
-                'executionlogid' => $log ? $log->id : null,
-                'logdettagliato' => $log ? $log->log_dettagliato : null,
-            ],
-        ];
-
         if (!$log) {
-            $response['message'] = 'Nessuna esecuzione avviata.';
+            return response()->json([
+                'wizard' => new WizardResource($wizard),
+                'execution' => null,
+                'message' => 'Nessuna esecuzione avviata.'
+            ]);
         }
 
-        return response()->json($response, Response::HTTP_OK);
+        return new ExecutionLogResource($log);
     }
 
     /**

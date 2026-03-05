@@ -1,6 +1,4 @@
-# File: screen_connect.py
-# Path: windeploy\agent\gui\screens\screen_connect.py
-
+# agent/gui/screens/screen_connect.py
 # agent/gui/screens/screen_connect.py
 import re
 import threading

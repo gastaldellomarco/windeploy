@@ -1,30 +1,35 @@
 <?php
+// File: database/seeders/AdminUserSeeder.php
 
 namespace Database\Seeders;
 
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use App\Models\User;
 
 class AdminUserSeeder extends Seeder
 {
     /**
-     * Run the database seeds.
+     * Crea l'utente admin iniziale per WinDeploy.
+     *
+     * ⚠️ SICUREZZA: cambia la password immediatamente dopo il primo accesso.
+     * Non committare questo seeder con password reali nel repository.
+     * In produzione usa variabili d'ambiente o un vault.
      */
     public function run(): void
     {
-        // Crea utente admin se non esiste già
-        $user = User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'admin@windeploy.local'],
             [
-                'name'     => 'Admin WinDeploy',
-                'password' => Hash::make('ChangeThisAdminPassword!'),
+                'nome'     => 'Amministratore',
+                'email'    => 'admin@windeploy.local',
+                'password' => Hash::make('Admin@1234!'),
+                'ruolo'    => 'admin',
+                'attivo'   => true,
             ]
         );
 
-        // Assegna ruolo "admin" (devi aver creato il ruolo prima)
-        if (method_exists($user, 'assignRole')) {
-            $user->assignRole('admin');
-        }
+        $this->command->info('✅ Admin creato: admin@windeploy.local / Admin@1234!');
+        $this->command->warn('⚠️  Cambia la password al primo accesso!');
     }
 }

@@ -1,6 +1,3 @@
-# File: screen_progress.py
-# Path: windeploy\agent\gui\screens\screen_progress.py
-
 import customtkinter as ctk
 import threading
 import time

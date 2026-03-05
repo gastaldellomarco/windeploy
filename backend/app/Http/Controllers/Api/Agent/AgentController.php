@@ -3,22 +3,29 @@
 namespace App\Http\Controllers\Api\Agent;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Agent\AgentAbortRequest;
 use App\Http\Requests\Agent\AgentAuthRequest;
+use App\Http\Requests\Agent\AgentCompleteRequest;
 use App\Http\Requests\Agent\AgentStartRequest;
 use App\Http\Requests\Agent\AgentStepRequest;
-use App\Http\Requests\Agent\AgentCompleteRequest;
-use App\Http\Requests\Agent\AgentAbortRequest;
-use App\Models\Wizard;
 use App\Models\ExecutionLog;
 use App\Models\Report;
-use App\Events\ExecutionLogUpdated;
+use App\Models\Wizard;
+use App\Services\EncryptionService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Tymon\JWTAuth\Facades\JWTFactory;
-use Carbon\Carbon;
 
 class AgentController extends Controller
 {
+    protected EncryptionService $encryption;
+
+    public function __construct(EncryptionService $encryption)
+    {
+        $this->encryption = $encryption;
+    }
+
     /**
      * 1. Autenticazione iniziale con codice wizard e MAC address.
      */
@@ -63,16 +70,25 @@ class AgentController extends Controller
 
         $token = JWTAuth::encode($payload)->get();
 
-        // Restituisci token e configurazione completa del wizard
-        // Attenzione: la password utente admin è cifrata; la decifriamo per l'agent
+        // Aggiorna stato wizard
+        $wizard->stato = 'in_esecuzione';
+        $wizard->save();
+
+        // Decifra le password per l'agent usando EncryptionService
         $config = $wizard->configurazione;
+        $salt = (string) $wizard->id; // o wizard->codice_univoco
         if (isset($config['utente_admin']['password_encrypted'])) {
-            $config['utente_admin']['password'] = Crypt::decryptString($config['utente_admin']['password_encrypted']);
+            $config['utente_admin']['password'] = $this->encryption->decryptForWizard(
+                $config['utente_admin']['password_encrypted'],
+                $salt
+            );
             unset($config['utente_admin']['password_encrypted']);
         }
-        // Stessa cosa per eventuale password Wi-Fi
         if (isset($config['extras']['wifi']['password_encrypted'])) {
-            $config['extras']['wifi']['password'] = Crypt::decryptString($config['extras']['wifi']['password_encrypted']);
+            $config['extras']['wifi']['password'] = $this->encryption->decryptForWizard(
+                $config['extras']['wifi']['password_encrypted'],
+                $salt
+            );
             unset($config['extras']['wifi']['password_encrypted']);
         }
 
@@ -119,11 +135,6 @@ class AgentController extends Controller
             'started_at'         => now(),
         ]);
 
-        // Aggiorna stato wizard
-        $wizard->stato = 'in_esecuzione';
-        $wizard->used_at = now();
-        $wizard->save();
-
         return response()->json([
             'execution_log_id' => $executionLog->id,
             'ok'               => true,
@@ -144,31 +155,28 @@ class AgentController extends Controller
             ->where('wizard_id', $wizardId)
             ->firstOrFail();
 
-        // Verifica che il log sia ancora aperto
         if (!in_array($executionLog->stato, ['avviato', 'in_corso'])) {
             return response()->json(['message' => 'Esecuzione già completata o abortita.'], 422);
         }
 
-        // Prepara step con timestamp
         $step = $data['step'];
         $step['timestamp'] = now()->toIso8601String();
 
-        // Appendi al log dettagliato
         $log = $executionLog->log_dettagliato ?? [];
         $log[] = $step;
         $executionLog->log_dettagliato = $log;
 
-        // Aggiorna step corrente se presente
         if (isset($step['nome'])) {
             $executionLog->step_corrente = $step['nome'];
         }
 
-        // Se lo step è di tipo "errore" possiamo cambiare stato? No, aspettiamo complete/abort.
-        $executionLog->stato = 'in_corso'; // se era avviato passa in corso
+        if ($executionLog->stato === 'avviato') {
+            $executionLog->stato = 'in_corso';
+        }
         $executionLog->save();
 
-        // Broadcast evento per monitor realtime
-        broadcast(new ExecutionLogUpdated($executionLog))->toOthers();
+        // Eventuale broadcast per il frontend
+        // broadcast(new ExecutionLogUpdated($executionLog))->toOthers();
 
         return response()->json(['ok' => true]);
     }
@@ -191,12 +199,10 @@ class AgentController extends Controller
             return response()->json(['message' => 'Esecuzione già completata.'], 422);
         }
 
-        // Aggiorna log con eventuale step finale? Già inviato via step.
         $executionLog->pc_nome_nuovo = $data['pc_nome_nuovo'];
         $executionLog->stato = 'completato';
         $executionLog->completed_at = now();
 
-        // Aggiungi eventuale sommario al log dettagliato (opzionale)
         $log = $executionLog->log_dettagliato ?? [];
         $log[] = [
             'step'      => 'sommario_finale',
@@ -207,23 +213,21 @@ class AgentController extends Controller
         $executionLog->log_dettagliato = $log;
         $executionLog->save();
 
-        // Aggiorna stato wizard
         $wizard = Wizard::find($wizardId);
         $wizard->stato = 'completato';
+        $wizard->used_at = now();
         $wizard->save();
 
-        // Salva report HTML
         $report = Report::create([
             'execution_log_id' => $executionLog->id,
             'html_content'     => $data['report_html'],
         ]);
 
-        // Broadcast evento finale
-        broadcast(new ExecutionLogUpdated($executionLog))->toOthers();
+        // broadcast(new ExecutionLogUpdated($executionLog))->toOthers();
 
         return response()->json([
             'ok'         => true,
-            'report_url' => route('api.reports.show', $report->id), // assicurati di avere la route
+            'report_url' => route('api.reports.show', $report->id),
         ]);
     }
 
@@ -258,12 +262,11 @@ class AgentController extends Controller
         $executionLog->log_dettagliato = $log;
         $executionLog->save();
 
-        // Aggiorna wizard
         $wizard = Wizard::find($wizardId);
         $wizard->stato = 'errore';
         $wizard->save();
 
-        broadcast(new ExecutionLogUpdated($executionLog))->toOthers();
+        // broadcast(new ExecutionLogUpdated($executionLog))->toOthers();
 
         return response()->json(['ok' => true]);
     }

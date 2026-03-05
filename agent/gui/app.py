@@ -1,6 +1,3 @@
-# File: app.py
-# Path: windeploy\agent\gui\app.py
-
 # agent/gui/app.py
 import customtkinter as ctk
 from config import AGENT_VERSION, WINDOW_WIDTH, WINDOW_HEIGHT, COLORS

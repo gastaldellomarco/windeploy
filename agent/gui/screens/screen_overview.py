@@ -1,6 +1,3 @@
-# File: screen_overview.py
-# Path: windeploy\agent\gui\screens\screen_overview.py
-
 import customtkinter as ctk
 import threading
 import json

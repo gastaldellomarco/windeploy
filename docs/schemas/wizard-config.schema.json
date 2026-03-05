@@ -1,0 +1,219 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://windeploy.local/schemas/wizard-config.schema.json",
+  "title": "WizardConfig",
+  "description": "Contratto condiviso tra Frontend React, Backend Laravel e Agent Python per la configurazione del wizard di provisioning WinDeploy. Versione: 1.0",
+  "type": "object",
+  "required": ["version", "pc_name", "admin_user", "software", "bloatware", "power_plan"],
+  "additionalProperties": false,
+  "properties": {
+
+    "version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Versione dello schema. Incrementare in caso di breaking change."
+    },
+
+    "pc_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 15,
+      "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9\\-]*[a-zA-Z0-9])?$",
+      "description": "Nome del PC di destinazione. Massimo 15 caratteri alfanumerici e trattini. Non può iniziare o finire con trattino. Limite imposto da NetBIOS/Windows."
+    },
+
+    "admin_user": {
+      "type": "object",
+      "required": ["username"],
+      "additionalProperties": false,
+      "description": "Credenziali dell'utente amministratore locale da creare sul PC.",
+      "properties": {
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "description": "Nome utente senza spazi o caratteri speciali."
+        },
+        "password": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128,
+          "description": "Password in chiaro. SOLO in transito frontend→backend su HTTPS. Il backend la sostituisce immediatamente con password_encrypted e rimuove questo campo."
+        },
+        "password_encrypted": {
+          "type": "string",
+          "description": "Password cifrata AES-256-GCM con EncryptionService. Presente nel JSON salvato nel DB e servito all'agent. Mai restituita nelle API di listing."
+        },
+        "remove_setup_account": {
+          "type": "boolean",
+          "default": false,
+          "description": "Se true, l'agent rimuoverà l'account Microsoft/OOBE di setup iniziale dopo aver creato l'utente admin locale."
+        }
+      }
+    },
+
+    "software": {
+      "type": "array",
+      "description": "Lista dei software da installare sul PC di destinazione.",
+      "items": {
+        "type": "object",
+        "required": ["id", "winget_id", "name", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Chiave primaria nella tabella software_library del backend."
+          },
+          "winget_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Identificatore winget per installazione silenziosa (es. 'Google.Chrome'). Usato dall'agent per winget install --id."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Nome visualizzabile del software (solo display, non usato per installazione)."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["winget", "exe", "msi"],
+            "description": "Tipo di installazione: winget usa il package manager, exe/msi scaricano dal server WinDeploy."
+          },
+          "download_url": {
+            "type": ["string", "null"],
+            "format": "uri",
+            "description": "URL di download dal server WinDeploy. Obbligatorio se type='exe' o type='msi', null se type='winget'."
+          }
+        }
+      }
+    },
+
+    "bloatware": {
+      "type": "array",
+      "description": "Lista delle app pre-selezionate per la rimozione. L'agent mostrerà questa lista all'utente che potrà deselezionare singole voci.",
+      "items": {
+        "type": "object",
+        "required": ["package_name", "display_name", "selected"],
+        "additionalProperties": false,
+        "properties": {
+          "package_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Nome del pacchetto AppX o identificatore per winget uninstall (es. 'Microsoft.XboxApp')."
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Nome leggibile mostrato all'utente durante la selezione (es. 'Xbox')."
+          },
+          "selected": {
+            "type": "boolean",
+            "default": true,
+            "description": "true = selezionata per rimozione. L'utente può deselezionare sull'agent prima dell'esecuzione."
+          }
+        }
+      }
+    },
+
+    "power_plan": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "description": "Configurazione del piano di risparmio energetico di Windows.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["balanced", "high_performance", "power_saver", "custom"],
+          "description": "Tipo di piano: preset di Windows o configurazione manuale."
+        },
+        "screen_timeout_ac": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Timeout spegnimento schermo con alimentazione AC, in minuti. null = mai. Usato solo se type='custom'."
+        },
+        "sleep_timeout_ac": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 120,
+          "description": "Timeout sospensione sistema con alimentazione AC, in minuti. null = mai. Usato solo se type='custom'."
+        },
+        "cpu_min_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 5,
+          "description": "Percentuale minima di frequenza CPU. Usato solo se type='custom'. Corrisponde a powercfg /setacvalueindex ... PROCTHROTTLEMIN."
+        },
+        "cpu_max_percent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 100,
+          "description": "Percentuale massima di frequenza CPU. Usato solo se type='custom'. Corrisponde a powercfg /setacvalueindex ... PROCTHROTTLEMAX."
+        }
+      }
+    },
+
+    "extras": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Configurazioni opzionali aggiuntive. L'intero oggetto è nullable.",
+      "properties": {
+        "timezone": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Fuso orario nel formato IANA (es. 'Europe/Rome'). Usato dall'agent con tzutil /s."
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2}-[A-Z]{2}$",
+          "description": "Codice lingua e regione (es. 'it-IT'). Usato con Set-WinUserLanguageList."
+        },
+        "keyboard_layout": {
+          "type": "string",
+          "pattern": "^[a-z]{2}-[A-Z]{2}$",
+          "description": "Layout tastiera (es. 'it-IT'). Può differire dalla lingua dell'interfaccia."
+        },
+        "wallpaper_url": {
+          "type": ["string", "null"],
+          "description": "URL relativo sul server WinDeploy per scaricare lo sfondo aziendale (es. '/storage/wallpapers/azienda.jpg'). null = nessun wallpaper personalizzato."
+        },
+        "wifi": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["ssid"],
+              "additionalProperties": false,
+              "properties": {
+                "ssid": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "description": "Nome della rete WiFi (SSID)."
+                },
+                "password": {
+                  "type": "string",
+                  "description": "Password WiFi in chiaro. SOLO in transito frontend→backend. Backend la cifra immediatamente."
+                },
+                "password_encrypted": {
+                  "type": "string",
+                  "description": "Password WiFi cifrata AES-256-GCM. Presente nel JSON del DB e servito all'agent."
+                }
+              }
+            },
+            { "type": "null" }
+          ],
+          "description": "Configurazione WiFi aziendale. null = nessuna configurazione WiFi automatica."
+        },
+        "windows_update": {
+          "type": "string",
+          "enum": ["auto", "download_only", "manual"],
+          "description": "Policy di Windows Update: auto=installa automaticamente, download_only=scarica senza installare, manual=notifica senza scaricare."
+        }
+      }
+    }
+  }
+}

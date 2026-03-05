@@ -1,141 +1,178 @@
 <?php
+// File: app/Http/Controllers/Api/User/UserController.php
 
 namespace App\Http\Controllers\Api\User;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
+use App\Http\Requests\User\UserIndexRequest;
+use App\Http\Requests\User\UserStoreRequest;
+use App\Http\Requests\User\UserUpdateRequest;
+use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Models\Wizard;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 
 class UserController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Lista utenti con filtri (ruolo, attivo), paginazione 20.
+     * Accesso: solo admin (già gestito da middleware role:admin sulle route).
      */
-    public function index()
+    public function index(UserIndexRequest $request)
     {
-    // Restituisce una lista di utenti per la web app (admin)
-    // La risposta è normalizzata come { data: [...] } per compatibilità con il frontend
-    $users = User::select(['id', 'nome', 'email', 'ruolo', 'attivo', 'last_login', 'last_login_ip', 'created_at'])->get();
+        $query = User::query();
 
-    return response()->json(['data' => $users]);
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        // Valida i campi in arrivo
-        $v = Validator::make($request->all(), [
-            'nome' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'ruolo' => ['required', 'in:admin,tecnico,viewer'],
-            'password_temporanea' => ['required', 'string', 'min:8'],
-        ]);
-
-        if ($v->fails()) {
-            return response()->json(['message' => 'Validation failed', 'errors' => $v->errors()], 422);
-        }
-
-        // Crea utente
-        $user = User::create([
-            'nome' => $request->input('nome'),
-            'email' => $request->input('email'),
-            'ruolo' => $request->input('ruolo'),
-            'password' => Hash::make($request->input('password_temporanea')),
-            'attivo' => true,
-            // registra IP reale del client (non mocked)
-            'last_login_ip' => $request->ip(),
-        ]);
-
-        // Assegna ruolo con Spatie (se disponibile)
-        if (method_exists($user, 'assignRole')) {
-            $user->assignRole($request->input('ruolo'));
-        }
-
-        return response()->json(['data' => $user], 201);
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
-    {
-        $user = User::find($id);
-        if (! $user) {
-            return response()->json(['message' => 'User not found'], 404);
-        }
-
-        return response()->json(['data' => $user]);
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        $user = User::find($id);
-        if (! $user) {
-            return response()->json(['message' => 'User not found'], 404);
-        }
-
-        // Action-based updates
-        $action = $request->input('action');
-        if ($action === 'reset_password') {
-            // Generate a temporary password and return it once
-            $temp = bin2hex(random_bytes(6)); // 12 hex chars
-            $user->password = Hash::make($temp);
-            $user->save();
-
-            // Do NOT log the plaintext password server-side. Return it only once.
-            return response()->json(['password_temporanea' => $temp]);
-        }
-
-        // Update fields: ruolo, attivo
-        $changed = false;
-        if ($request->has('ruolo')) {
-            $ruolo = $request->input('ruolo');
-            if (in_array($ruolo, ['admin','tecnico','viewer'])) {
-                $user->ruolo = $ruolo;
-                // sync Spatie roles
-                if (method_exists($user, 'syncRoles')) {
-                    $user->syncRoles([$ruolo]);
-                }
-                $changed = true;
-            }
+        if ($request->filled('ruolo')) {
+            $query->where('ruolo', $request->input('ruolo'));
         }
 
         if ($request->has('attivo')) {
-            $user->attivo = boolval($request->input('attivo'));
-            $changed = true;
+            $query->where('attivo', $request->boolean('attivo'));
         }
 
-        if ($changed) {
-            $user->save();
-        }
+        $users = $query->latest()->paginate(20);
 
-        return response()->json(['data' => $user]);
+        return UserResource::collection($users);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Dettaglio utente + statistiche di base.
+     * - numero wizard creati
+     * - ultimo accesso
      */
-    public function destroy(string $id)
+    public function show(User $user): JsonResponse
     {
-        $user = User::find($id);
-        if (! $user) {
-            return response()->json(['message' => 'User not found'], 404);
+        $wizardsCount = Wizard::where('user_id', $user->id)->count();
+
+        return response()->json([
+            'user'  => new UserResource($user),
+            'stats' => [
+                'wizards_count' => $wizardsCount,
+                'last_login'    => $user->last_login?->toIso8601String(),
+            ],
+        ]);
+    }
+
+    /**
+     * Crea un nuovo utente.
+     * - Password: se non fornita, viene generata automaticamente.
+     * - La password generata viene restituita UNA SOLA VOLTA nella response.
+     * - Assegna ruolo Spatie in base a $request->ruolo.
+     */
+    public function store(UserStoreRequest $request): JsonResponse
+    {
+        $data = $request->validated();
+
+        $plainPassword = $data['password'] ?? Str::random(16);
+        $data['password'] = Hash::make($plainPassword);
+        $data['attivo'] = $data['attivo'] ?? true;
+
+        $user = User::create([
+            'nome'     => $data['nome'],
+            'email'    => $data['email'],
+            'password' => $data['password'],
+            'ruolo'    => $data['ruolo'],
+            'attivo'   => $data['attivo'],
+        ]);
+
+        // Allinea ruoli Spatie con campo ruolo
+        $user->assignRole($data['ruolo']);
+
+        return response()->json([
+            'user'              => new UserResource($user),
+            'generated_password'=> $request->filled('password') ? null : $plainPassword,
+        ], Response::HTTP_CREATED);
+    }
+
+    /**
+     * Aggiorna un utente esistente.
+     * - Password opzionale: se non inviata non viene modificata.
+     * - Se cambia il ruolo, sincronizza anche le Spatie roles.
+     */
+    public function update(UserUpdateRequest $request, User $user)
+    {
+        $data = $request->validated();
+
+        if (isset($data['nome'])) {
+            $user->nome = $data['nome'];
         }
 
-        // Prevent deleting the last admin — basic safety (optional)
-        try {
-            $user->delete();
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Unable to delete user'], 500);
+        if (isset($data['email'])) {
+            $user->email = $data['email'];
         }
 
-        return response()->json(null, 204);
+        if (array_key_exists('attivo', $data)) {
+            $user->attivo = $data['attivo'];
+        }
+
+        if (! empty($data['password'])) {
+            $user->password = Hash::make($data['password']);
+        }
+
+        if (isset($data['ruolo']) && $data['ruolo'] !== $user->ruolo) {
+            $user->ruolo = $data['ruolo'];
+            $user->syncRoles([$data['ruolo']]);
+        }
+
+        $user->save();
+
+        return new UserResource($user);
+    }
+
+    /**
+     * Disattiva un account utente.
+     * - Mai hard delete: setta solo attivo = false.
+     */
+    public function destroy(User $user): JsonResponse
+    {
+        $user->attivo = false;
+        $user->save();
+
+        return response()->json(['message' => 'Utente disattivato.'], Response::HTTP_OK);
+    }
+
+    /**
+     * Attiva / disattiva un account utente.
+     */
+    public function toggleActive(User $user)
+    {
+        $user->attivo = ! (bool) $user->attivo;
+        $user->save();
+
+        return new UserResource($user);
+    }
+
+    /**
+     * Reset password:
+     * - Genera una password casuale sicura (16 caratteri).
+     * - La ritorna UNA SOLA VOLTA.
+     * - Invia una email (MAIL_MAILER=log in locale).
+     */
+    public function resetPassword(User $user): JsonResponse
+    {
+        $plainPassword = Str::random(16);
+        $user->password = Hash::make($plainPassword);
+        $user->save();
+
+        // Invia una mail semplice con la nuova password (finisce nel log in dev)
+        Mail::raw(
+            "Ciao {$user->nome},\n\n" .
+            "la tua password è stata reimpostata.\n" .
+            "Nuova password: {$plainPassword}\n\n" .
+            "Ti consigliamo di cambiarla al primo accesso.\n",
+            function ($message) use ($user) {
+                $message->to($user->email);
+                $message->subject('Reset password WinDeploy');
+            }
+        );
+
+        return response()->json([
+            'user'         => new UserResource($user),
+            'new_password' => $plainPassword,
+        ], Response::HTTP_OK);
     }
 }

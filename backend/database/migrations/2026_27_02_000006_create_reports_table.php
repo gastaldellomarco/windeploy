@@ -11,15 +11,26 @@ return new class extends Migration
     {
         Schema::create('reports', function (Blueprint $table) {
             $table->id();
+
+            // cascadeOnDelete: se il log viene eliminato, il report sparisce.
+            // Relazione 1:1 — un log ha al massimo un report.
+            // unique() garantisce l'unicità a livello DB.
             $table->foreignId('execution_log_id')
-                  ->unique()                                     // 1:1 con execution_log
+                  ->unique()
                   ->constrained('execution_logs')
-                  ->cascadeOnDelete();                           // se il log viene rimosso, rimuovi il report
-            $table->longText('html_content');                    // report HTML auto-contenuto
+                  ->cascadeOnDelete();
+
+            // LONGTEXT: un report HTML completo con CSS inline può arrivare a 10-50KB.
+            // LONGTEXT supporta fino a 4GB — più che sufficiente.
+            $table->longText('html_content');
+
+            // Solo created_at: i report sono immutabili una volta generati.
+            // Se serve ri-generare, si elimina e ricrea (cascade dal log).
             $table->timestamp('created_at')->useCurrent();
 
-            // Indici
-            $table->index('created_at');                         // lista report per data (frequente)
+            // Indice su execution_log_id già creato dall'unique() sopra.
+            // Aggiungiamo indice su created_at per query "report recenti".
+            $table->index('created_at');
         });
     }
 

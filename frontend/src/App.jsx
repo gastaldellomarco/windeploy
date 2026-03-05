@@ -1,12 +1,19 @@
-import React from 'react';
-import AppRouter from './router/AppRouter';
+// Path: frontend/src/App.jsx
+import React from "react";
+import { Toaster } from "react-hot-toast";
+import AppRouter from "./router/index.jsx";
 
-function App() {
+export default function App() {
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
+    <div className="min-h-screen" style={{ backgroundColor: "#F0F4F8" }}>
       <AppRouter />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          
+        }}
+      />
     </div>
   );
 }
-
-export default App;

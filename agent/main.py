@@ -1,6 +1,3 @@
-# File: main.py
-# Path: windeploy\agent\main.py
-
 """Entry point for the Agent GUI.
 
 This module keeps a tiny, explicit entrypoint so PyInstaller (and local runs)

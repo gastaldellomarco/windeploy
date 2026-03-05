@@ -1,40 +1,46 @@
 <?php
+// File: app/Http/Controllers/Api/Software/SoftwareController.php
 
 namespace App\Http\Controllers\Api\Software;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Software\SoftwareLibraryStoreRequest;
-use App\Http\Requests\Software\SoftwareLibraryUpdateRequest;
+use App\Http\Requests\Software\SoftwareIndexRequest;
+use App\Http\Requests\Software\SoftwareStoreRequest;
+use App\Http\Requests\Software\SoftwareUpdateRequest;
 use App\Http\Resources\SoftwareLibraryResource;
 use App\Models\SoftwareLibrary;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http; // per chiamata a winget.run (esempio)
+use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 class SoftwareController extends Controller
 {
     /**
-     * Elenco software (accessibile a tutti).
-     * Filtri: categoria, attivo, tipo, search (nome)
+     * Lista software con filtri e paginazione (20 per pagina).
+     * Accesso: tutti i ruoli autenticati.
      */
-    public function index(Request $request)
+    public function index(SoftwareIndexRequest $request)
     {
         $query = SoftwareLibrary::query();
 
+        // Filtro per stato attivo (true/false)
         if ($request->has('attivo')) {
             $query->where('attivo', $request->boolean('attivo'));
         }
 
-        if ($request->has('categoria')) {
-            $query->where('categoria', $request->categoria);
+        // Filtro per categoria
+        if ($request->filled('categoria')) {
+            $query->where('categoria', $request->input('categoria'));
         }
 
-        if ($request->has('tipo')) {
-            $query->where('tipo', $request->tipo);
+        // Filtro per tipo (winget / exe / msi)
+        if ($request->filled('tipo')) {
+            $query->where('tipo', $request->input('tipo'));
         }
 
-        if ($request->has('search')) {
-            $query->where('nome', 'like', '%' . $request->search . '%');
+        // Ricerca testuale sul nome
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where('nome', 'like', '%' . $search . '%');
         }
 
         $software = $query->latest()->paginate(20);
@@ -43,14 +49,27 @@ class SoftwareController extends Controller
     }
 
     /**
-     * Crea nuovo software (solo admin).
+     * Dettaglio singolo software.
+     * Accesso: tutti i ruoli autenticati.
      */
-    public function store(SoftwareLibraryStoreRequest $request)
+    public function show(SoftwareLibrary $software)
+    {
+        return new SoftwareLibraryResource($software);
+    }
+
+    /**
+     * Crea una nuova entry software.
+     * Accesso: solo admin.
+     */
+    public function store(SoftwareStoreRequest $request): JsonResponse
     {
         $user = $request->user();
 
         if ($user->ruolo !== 'admin') {
-            return response()->json(['message' => 'Solo gli admin possono aggiungere software.'], Response::HTTP_FORBIDDEN);
+            return response()->json(
+                ['message' => 'Solo gli admin possono aggiungere software.'],
+                Response::HTTP_FORBIDDEN
+            );
         }
 
         $data = $request->validated();
@@ -58,100 +77,73 @@ class SoftwareController extends Controller
 
         $software = SoftwareLibrary::create($data);
 
-        return new SoftwareLibraryResource($software);
+        return response()->json(new SoftwareLibraryResource($software), Response::HTTP_CREATED);
     }
 
     /**
-     * Mostra dettaglio software.
+     * Aggiorna una entry software esistente.
+     * Accesso: solo admin.
      */
-    public function show(SoftwareLibrary $softwareLibrary)
-    {
-        // Accessibile a tutti (anche viewer)
-        return new SoftwareLibraryResource($softwareLibrary);
-    }
-
-    /**
-     * Aggiorna software (solo admin).
-     */
-    public function update(SoftwareLibraryUpdateRequest $request, SoftwareLibrary $softwareLibrary)
+    public function update(SoftwareUpdateRequest $request, SoftwareLibrary $software)
     {
         $user = $request->user();
 
         if ($user->ruolo !== 'admin') {
-            return response()->json(['message' => 'Solo gli admin possono modificare software.'], Response::HTTP_FORBIDDEN);
+            return response()->json(
+                ['message' => 'Solo gli admin possono modificare software.'],
+                Response::HTTP_FORBIDDEN
+            );
         }
 
-        $softwareLibrary->update($request->validated());
+        $software->update($request->validated());
 
-        return new SoftwareLibraryResource($softwareLibrary);
+        return new SoftwareLibraryResource($software);
     }
 
     /**
-     * Elimina software (soft delete, solo admin).
+     * Elimina (soft delete) una entry software.
+     * Se in futuro vorrai fare hard delete condizionato,
+     * qui è il punto in cui verificare l'utilizzo nei wizard.
+     * Accesso: solo admin.
      */
-    public function destroy(SoftwareLibrary $softwareLibrary)
+    public function destroy(SoftwareLibrary $software)
     {
         $user = request()->user();
 
         if ($user->ruolo !== 'admin') {
-            return response()->json(['message' => 'Azione non consentita.'], Response::HTTP_FORBIDDEN);
+            return response()->json(
+                ['message' => 'Azione non consentita.'],
+                Response::HTTP_FORBIDDEN
+            );
         }
 
-        $softwareLibrary->delete();
+        // Soft delete (SoftDeletes sul modello)
+        $software->delete();
 
-        return response()->json(['message' => 'Software eliminato.']);
+        return response()->json(['message' => 'Software eliminato.'], Response::HTTP_OK);
     }
 
     /**
-     * Attiva/disattiva software (solo admin).
+     * Inverte il campo 'attivo' e restituisce il nuovo stato.
+     * Accesso: solo admin.
      */
-    public function toggleActive(SoftwareLibrary $softwareLibrary)
+    public function toggleActive(SoftwareLibrary $software)
     {
         $user = request()->user();
 
         if ($user->ruolo !== 'admin') {
-            return response()->json(['message' => 'Azione non consentita.'], Response::HTTP_FORBIDDEN);
+            return response()->json(
+                ['message' => 'Azione non consentita.'],
+                Response::HTTP_FORBIDDEN
+            );
         }
 
-        $softwareLibrary->attivo = !$softwareLibrary->attivo;
-        $softwareLibrary->save();
+        $software->attivo = ! (bool) $software->attivo;
+        $software->save();
 
-        return new SoftwareLibraryResource($softwareLibrary);
-    }
-
-    /**
-     * Cerca software su winget.run (o altra fonte) e restituisce lista.
-     * Accessibile a tutti (per ricerca in fase di creazione wizard).
-     */
-    public function searchWinget(Request $request)
-    {
-        $request->validate(['query' => 'required|string|min:2']);
-
-        // Esempio: chiamata a winget.run API (non ufficiale, solo dimostrativa)
-        // In produzione potresti usare un database locale di pacchetti winget
-        $response = Http::get('https://api.winget.run/v2/packages/search', [
-            'query' => $request->query,
-            'take' => 20,
+        return response()->json([
+            'id'     => $software->id,
+            'attivo' => (bool) $software->attivo,
         ]);
-
-        if ($response->failed()) {
-            return response()->json(['message' => 'Servizio di ricerca non disponibile.'], Response::HTTP_SERVICE_UNAVAILABLE);
-        }
-
-        $packages = $response->json()['Packages'] ?? [];
-
-        // Mappa i dati in un formato utile per il frontend
-        $results = collect($packages)->map(function ($pkg) {
-            return [
-                'id' => $pkg['Id'],
-                'nome' => $pkg['Name'],
-                'versione' => $pkg['Latest']['Version'] ?? null,
-                'publisher' => $pkg['Publisher'],
-                'tipo' => 'winget',
-                'identificatore' => $pkg['Id'],
-            ];
-        });
-
-        return response()->json($results);
     }
 }

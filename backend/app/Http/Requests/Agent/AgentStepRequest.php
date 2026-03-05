@@ -6,19 +6,18 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class AgentStepRequest extends FormRequest
 {
-    public function authorize()
+    public function authorize(): bool
     {
         return true;
     }
 
-    public function rules()
+    public function rules(): array
     {
         return [
-            'execution_log_id'   => 'required|integer|exists:execution_logs,id',
-            'step'               => 'required|array',
-            'step.nome'          => 'required|string|max:100',
-            'step.stato'         => 'required|in:completato,errore,avviso',
-            'step.messaggio'     => 'nullable|string|max:1000',
+            'execution_log_id' => 'required|integer|exists:execution_logs,id',
+            'step.nome'        => 'required|string|max:100',
+            'step.stato'       => 'nullable|string|max:50', // es. "ok", "errore", "warning"
+            'step.messaggio'   => 'nullable|string',
         ];
     }
 }

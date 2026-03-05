@@ -3,7 +3,7 @@ import React from 'react';
 function StepProgress({ steps, currentStepIndex, completedMap, onStepClick }) {
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-stretch justify-between gap-1 -mx-0.5">
         {steps.map((step, idx) => {
           const isActive = idx === currentStepIndex;
           const isCompleted = Boolean(completedMap?.[idx]);
@@ -14,30 +14,30 @@ function StepProgress({ steps, currentStepIndex, completedMap, onStepClick }) {
               key={step.key}
               type="button"
               onClick={() => isClickable && onStepClick(idx)}
-              className={`flex-1 text-left rounded-lg border px-3 py-2 transition ${
+              className={`flex-1 min-w-[90px] text-left rounded-lg border px-2 py-2 transition min-h-[80px] flex flex-col justify-between overflow-hidden ${
                 isActive
                   ? 'border-sky-500 bg-sky-500/10'
                   : 'border-slate-800 bg-slate-900/40 hover:bg-slate-900/70'
               } ${isClickable ? 'cursor-pointer' : 'cursor-default'}`}
               aria-current={isActive ? 'step' : undefined}
             >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-400">
+              <div className="flex items-start justify-between gap-1 overflow-hidden">
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400 truncate">
                     Step {idx + 1}
                   </div>
-                  <div className="truncate text-sm font-medium text-slate-100">
+                  <div className="truncate text-xs font-medium text-slate-100">
                     {step.label}
                   </div>
                 </div>
 
                 <div className="shrink-0">
                   {isCompleted ? (
-                    <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-300">
+                    <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300 whitespace-nowrap">
                       OK
                     </span>
                   ) : (
-                    <span className="inline-flex items-center rounded-full bg-slate-700/30 px-2 py-1 text-xs font-medium text-slate-300">
+                    <span className="inline-flex items-center rounded-full bg-slate-700/30 px-1.5 py-0.5 text-[10px] font-medium text-slate-300 whitespace-nowrap">
                       —
                     </span>
                   )}

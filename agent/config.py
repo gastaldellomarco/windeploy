@@ -1,6 +1,3 @@
-# File: config.py
-# Path: windeploy\agent\config.py
-
 # agent/config.py
 import os
 
@@ -35,3 +32,4 @@ COLORS = {
 # --- Window Settings ---
 WINDOW_WIDTH = 900
 WINDOW_HEIGHT = 650
+

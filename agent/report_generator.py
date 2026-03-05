@@ -1,6 +1,3 @@
-# File: report_generator.py
-# Path: windeploy\agent\report_generator.py
-
 import html
 from typing import Dict, Any
 

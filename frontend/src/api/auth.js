@@ -1,24 +1,33 @@
-// Minimal mock implementations for auth API used in hooks.
-// Replace these with real HTTP calls to the backend when available.
-export async function loginApi(_credentials) {
-	// Simulate successful login
-	return new Promise((resolve) => {
-		setTimeout(() => {
-			resolve({ token: 'fake-token', user: { id: 1, name: 'Demo User', role: 'admin' } });
-		}, 200);
-	});
+import client from './client';
+
+/**
+ * Login utente via Sanctum Bearer Token.
+ * POST /api/auth/login
+ * Response attesa: { token, token_expires_at, user: { id, name, email, role } }
+ */
+export async function loginApi(credentials) {
+  const response = await client.post('/auth/login', credentials);
+  return response.data;
 }
 
+/**
+ * Logout — invalida il token Sanctum lato server.
+ * POST /api/auth/logout
+ * Richiede Authorization: Bearer header (aggiunto dall'interceptor).
+ */
 export async function logoutApi() {
-	return new Promise((resolve) => setTimeout(resolve, 100));
+  const response = await client.post('/auth/logout');
+  return response.data;
 }
 
+/**
+ * Recupera il profilo dell'utente autenticato.
+ * GET /api/auth/me
+ * Usato all'avvio app per verificare che il token in localStorage sia ancora valido.
+ */
 export async function meApi() {
-	return new Promise((resolve) => setTimeout(() => resolve({ id: 1, name: 'Demo User', role: 'admin' }), 100));
+  const response = await client.get('/auth/me');
+  return response.data;
 }
 
-export default {
-	loginApi,
-	logoutApi,
-	meApi,
-};
+export default { loginApi, logoutApi, meApi };

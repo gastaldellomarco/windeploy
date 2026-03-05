@@ -1,8 +1,11 @@
 <?php
+// app/Models/User.php
 
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -11,15 +14,10 @@ use Tymon\JWTAuth\Contracts\JWTSubject;
 
 class User extends Authenticatable implements JWTSubject
 {
-    use HasApiTokens, HasFactory, Notifiable, HasRoles;
+    use HasApiTokens, HasFactory, Notifiable, HasRoles, SoftDeletes;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
-        'nome',          // <-- invece di 'name'
+        'nome',
         'email',
         'password',
         'ruolo',
@@ -28,26 +26,52 @@ class User extends Authenticatable implements JWTSubject
         'last_login_ip',
     ];
 
-    /**
-     * Accessor opzionale per compatibilità con 'name'
-     * (es. se in futuro qualche pacchetto lo usa).
-     */
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    protected $casts = [
+        'attivo'      => 'boolean',
+        'last_login'  => 'datetime',
+        'created_at'  => 'datetime',
+        'updated_at'  => 'datetime',
+        'deleted_at'  => 'datetime',
+    ];
+
+    // Relazioni
+    public function wizards(): HasMany
+    {
+        return $this->hasMany(Wizard::class, 'user_id');
+    }
+
+    public function templates(): HasMany
+    {
+        return $this->hasMany(Template::class, 'user_id');
+    }
+
+    public function softwareAggiunto(): HasMany
+    {
+        return $this->hasMany(SoftwareLibrary::class, 'aggiunto_da');
+    }
+
+    public function executionLogs(): HasMany
+    {
+        return $this->hasMany(ExecutionLog::class, 'tecnico_user_id');
+    }
+
+    // Accessor per compatibilità con pacchetti che usano 'name'
     public function getNameAttribute(): ?string
     {
         return $this->attributes['nome'] ?? null;
     }
 
-    /**
-     * Get the identifier that will be stored in the subject claim of the JWT.
-     */
-    public function getJWTIdentifier()
+    // JWT Subject (per l'agent)
+    public function getJWTIdentifier(): mixed
     {
         return $this->getKey();
     }
 
-    /**
-     * Return a key value array, containing any custom claims to be added to the JWT.
-     */
     public function getJWTCustomClaims(): array
     {
         return [];

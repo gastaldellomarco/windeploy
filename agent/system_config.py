@@ -1,6 +1,3 @@
-# File: system_config.py
-# Path: windeploy\agent\system_config.py
-
 import subprocess
 
 class SystemConfig:

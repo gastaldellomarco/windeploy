@@ -1,5 +1,3 @@
-# File: api_client.py
-# Path: windeploy\agent\api_client.py
 """agent/api_client.py
 Small class-based HTTP client for the agent UI.
 

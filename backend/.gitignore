@@ -1,24 +1,62 @@
-*.log
-.DS_Store
-.env
-.env.backup
-.env.production
-.phpactor.json
-.phpunit.result.cache
-/.fleet
-/.idea
-/.nova
-/.phpunit.cache
-/.vscode
-/.zed
-/auth.json
+# =============================================
+# Laravel standard ignores
+# =============================================
 /node_modules
-/public/build
 /public/hot
 /public/storage
 /storage/*.key
-/storage/pail
 /vendor
+.env
+.env.backup
+.env.production
+.phpunit.result.cache
+docker-compose.override.yml
 Homestead.json
 Homestead.yaml
+auth.json
+npm-debug.log
+yarn-error.log
+
+# =============================================
+# WinDeploy — File temporanei di sviluppo
+# =============================================
+tmp_*.php
+tmp_*.py
+tmp_*.sh
+tmp_*.sql
+
+# =============================================
+# WinDeploy — Script dev locali (mai in repo)
+# =============================================
+scripts/dev/
+scripts/local/
+
+# =============================================
+# IDE e OS
+# =============================================
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
 Thumbs.db
+desktop.ini
+
+# =============================================
+# Log e cache locali
+# =============================================
+/storage/logs/*.log
+/bootstrap/cache/*.php
+
+# =============================================
+# Test artifacts
+# =============================================
+coverage/
+.phpunit.cache/
+
+# =============================================
+# Build / deploy artifacts
+# =============================================
+*.phar
+*.zip
+*.tar.gz

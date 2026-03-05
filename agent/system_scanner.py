@@ -1,6 +1,3 @@
-# File: system_scanner.py
-# Path: windeploy\agent\system_scanner.py
-
 import winreg
 import subprocess
 import json

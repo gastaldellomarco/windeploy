@@ -1,6 +1,3 @@
-# File: installer.py
-# Path: windeploy\agent\installer.py
-
 import subprocess
 import os
 import requests
