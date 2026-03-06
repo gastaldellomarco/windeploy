@@ -1,60 +1,145 @@
+// frontend/src/store/authStore.js
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import api from '../api/axios';
 
-const TOKEN_KEY = 'windeploy_token';
-const USER_KEY = 'windeploy_user';
+const initialState = {
+  user: null,
+  token: null,
+  isAuthenticated: false,
+  role: null,
+};
 
-const getInitialState = () => {
-  const token = window.localStorage.getItem(TOKEN_KEY) || null;
-  const userJson = window.localStorage.getItem(USER_KEY);
-  let user = null;
-
-  try {
-    if (userJson) {
-      user = JSON.parse(userJson);
-    }
-  } catch (error) {
-    console.error('Failed to parse stored user', error);
+function normalizeUser(rawUser) {
+  if (!rawUser || typeof rawUser !== 'object') {
+    return null;
   }
 
   return {
-    token,
-    user,
-    isAuthenticated: Boolean(token && user),
+    ...rawUser,
+    name: rawUser.name ?? rawUser.nome ?? '',
+    email: rawUser.email ?? '',
+    role: rawUser.role ?? rawUser.ruolo ?? null,
   };
-};
+}
 
-export const useAuthStore = create((set) => ({
-  ...getInitialState(),
+export const useAuthStore = create(
+  persist(
+    (set, get) => ({
+      ...initialState,
 
-  login: ({ token, user }) => {
-    // WARNING: token in localStorage è pratico ma vulnerabile a XSS.
-    // Per produzione valuta in futuro un approccio cookie HttpOnly + CSRF.
-    window.localStorage.setItem(TOKEN_KEY, token);
-    window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+      async login(email, password) {
+        const response = await api.post('/auth/login', {
+          email,
+          password,
+        });
 
-    set({
-      token,
-      user,
-      isAuthenticated: true,
-    });
-  },
+        const payload = response?.data ?? {};
+        // Support two common shapes: { user: { ... }, token } or { ...userFields..., token }
+        const user = normalizeUser(payload.user ?? payload);
+        const token = payload.token ?? null;
+        const role = payload.role ?? user?.role ?? null;
 
-  logout: () => {
-    window.localStorage.removeItem(TOKEN_KEY);
-    window.localStorage.removeItem(USER_KEY);
+        if (!token || !user) {
+          throw new Error('Invalid login response shape.');
+        }
 
-    set({
-      token: null,
-      user: null,
-      isAuthenticated: false,
-    });
-  },
+        set({
+          user,
+          token,
+          role,
+          isAuthenticated: true,
+        });
 
-  setUser: (user) => {
-    window.localStorage.setItem(USER_KEY, JSON.stringify(user));
-    set({ user });
-  },
-}));
+        return payload;
+      },
 
-// Default export for consumers that import the store as default
+      async logout() {
+        try {
+          // Fire-and-forget: il token potrebbe essere già scaduto o revocato lato server.
+          // Usiamo un flag custom per evitare loop con il response interceptor su 401.
+          await api.post(
+            '/auth/logout',
+            {},
+            {
+              _skipAuthLogout: true,
+            }
+          );
+        } catch {
+          // Silenzioso per specifica.
+        } finally {
+          set({
+            user: null,
+            token: null,
+            role: null,
+            isAuthenticated: false,
+          });
+
+          window.location.href = '/login';
+        }
+      },
+
+      setUser(user) {
+        const normalizedUser = normalizeUser(user);
+
+        set((state) => ({
+          user: normalizedUser,
+          role: normalizedUser?.role ?? state.role ?? null,
+          isAuthenticated: Boolean(state.token && normalizedUser),
+        }));
+      },
+
+      async checkAuth() {
+        try {
+          const response = await api.get('/auth/me', {
+            _skipAuthLogout: true,
+          });
+
+          const remoteUser = normalizeUser(response?.data?.user ?? response?.data);
+
+          set((state) => ({
+            user: remoteUser,
+            role: remoteUser?.role ?? state.role ?? null,
+            isAuthenticated: Boolean(state.token && remoteUser),
+          }));
+
+          return remoteUser;
+        } catch (error) {
+          if (error?.response?.status === 401) {
+            await get().logout();
+            return null;
+          }
+
+          throw error;
+        }
+      },
+    }),
+    {
+      name: 'windeploy-auth',
+      storage: createJSONStorage(() => window.localStorage),
+      partialize: (state) => ({
+        token: state.token,
+        role: state.role,
+      }),
+      onRehydrateStorage: () => (state, error) => {
+        if (error) {
+          return;
+        }
+
+        // Dopo il rehydrate recuperiamo il profilo lato server se abbiamo
+        // un token persistito ma non un oggetto user in memoria.
+        if (state?.token && !state?.user) {
+          setTimeout(() => {
+            const { checkAuth } = useAuthStore.getState();
+            checkAuth().catch(() => {
+              // Nessun rumore in bootstrap.
+            });
+          }, 0);
+        }
+      },
+    }
+  )
+);
+
+// Compatibilità: molti moduli importano lo store come default.
 export default useAuthStore;

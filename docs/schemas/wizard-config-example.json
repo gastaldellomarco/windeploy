@@ -1,0 +1,72 @@
+{
+  "version": "1.0",
+  "pc_name": "PC-UFFICIO-01",
+  "admin_user": {
+    "username": "admin_locale",
+    "password": "SecureP@ssw0rd2026!",
+    "remove_setup_account": true
+  },
+  "software": [
+    {
+      "id": 1,
+      "winget_id": "Microsoft.PowerToys",
+      "name": "Microsoft PowerToys",
+      "type": "winget",
+      "download_url": null
+    },
+    {
+      "id": 2,
+      "winget_id": "7zip.7zip",
+      "name": "7-Zip",
+      "type": "winget",
+      "download_url": null
+    },
+    {
+      "id": 3,
+      "winget_id": "custom-internal-app",
+      "name": "Custom Internal App",
+      "type": "exe",
+      "download_url": "http://windeploy.local/files/custom-app-setup.exe"
+    }
+  ],
+  "bloatware": [
+    {
+      "package_name": "Microsoft.XboxApp",
+      "display_name": "Xbox Console Companion",
+      "selected": true
+    },
+    {
+      "package_name": "Microsoft.Teams",
+      "display_name": "Microsoft Teams (Consumer)",
+      "selected": true
+    },
+    {
+      "package_name": "CandyCrush",
+      "display_name": "Candy Crush",
+      "selected": true
+    },
+    {
+      "package_name": "Microsoft.WindowsMaps",
+      "display_name": "Maps",
+      "selected": false
+    }
+  ],
+  "power_plan": {
+    "type": "custom",
+    "screen_timeout_ac": 15,
+    "sleep_timeout_ac": 30,
+    "cpu_min_percent": 10,
+    "cpu_max_percent": 100
+  },
+  "extras": {
+    "timezone": "Europe/Rome",
+    "language": "it-IT",
+    "keyboard_layout": "IT",
+    "wallpaper_url": "/public/wallpapers/company-2026.png",
+    "wifi": {
+      "ssid": "COMPANY-NETWORK",
+      "password": "WiFiSecureP@ss"
+    },
+    "windows_update": true
+  }
+}

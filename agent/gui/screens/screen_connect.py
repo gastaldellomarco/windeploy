@@ -155,8 +155,20 @@ class ScreenConnect(ctk.CTkFrame):
                     msg = response.text or "Il codice è scaduto o è già stato utilizzato."
                 self.after(0, self.set_error, msg)
             elif response.status_code == 422:
+                # Laravel usually returns { message: 'The given data was invalid.', errors: { field: [..] } }
                 try:
-                    msg = response.json().get("message", "Il wizard non è ancora pronto per l'esecuzione.")
+                    body = response.json()
+                    # Prefer detailed validation errors when present
+                    errors = body.get('errors') if isinstance(body, dict) else None
+                    if errors and isinstance(errors, dict):
+                        firsts = []
+                        for v in errors.values():
+                            if isinstance(v, list) and v:
+                                firsts.append(str(v[0]))
+                        msg = '; '.join(firsts) if firsts else body.get('message', 'Errore di validazione.')
+                    else:
+                        # Fallback to message field
+                        msg = body.get('message', response.text or 'Il wizard non è ancora pronto per l\'esecuzione.')
                 except (ValueError, json.JSONDecodeError):
                     msg = response.text or "Il wizard non è ancora pronto per l'esecuzione."
                 self.after(0, self.set_error, msg)
@@ -222,15 +234,70 @@ class ScreenConnect(ctk.CTkFrame):
             "wizard_code": code
         }
 
-        # Prefer ScreenOverview if available, otherwise go directly to ScreenProgress
-        if "ScreenOverview" in self.controller.screens:
-            target = "ScreenOverview"
-        else:
-            target = "ScreenProgress"
+        # Prefer ScreenOverview if the controller supports it, otherwise fall back to progress.
+        # Avoid accessing attributes that belong to Tkinter internals (e.g. controller.screens)
+        # which caused AttributeError on some controller implementations.
+        wizard_cfg = payload.get('wizard_config', {})
 
-        self.controller.navigate(target, payload)
+        if hasattr(self.controller, 'navigate') and callable(getattr(self.controller, 'navigate')):
+            # Modern controller: use navigate with legacy screen names
+            try:
+                # Try overview first
+                self.controller.navigate('ScreenOverview', payload)
+                return
+            except Exception:
+                try:
+                    self.controller.navigate('ScreenProgress', payload)
+                    return
+                except Exception:
+                    pass
+
+        # Fallback to older show_screen API if present
+        if hasattr(self.controller, 'show_screen') and callable(getattr(self.controller, 'show_screen')):
+            # populate wizard_config if controller expects it on the instance
+            try:
+                if isinstance(wizard_cfg, dict) and hasattr(self.controller, 'wizard_config'):
+                    self.controller.wizard_config = wizard_cfg
+            except Exception:
+                pass
+
+            try:
+                self.controller.show_screen('overview')
+                return
+            except Exception:
+                try:
+                    self.controller.show_screen('progress')
+                    return
+                except Exception:
+                    pass
+
+        # Last resort: try direct attribute-based navigation (very defensive)
+        try:
+            # map to method names if present
+            if hasattr(self.controller, 'on_connect_success'):
+                self.controller.on_connect_success(wizard_cfg)
+                return
+        except Exception:
+            pass
+
+        # If nothing worked, display error to the user
+        self.set_error('Impossibile aprire la schermata successiva. Contatta il supporto.')
 
     def _restore_ui(self):
         """Ripristina i componenti allo stato iniziale terminata l'attesa."""
-        self.connect_btn.configure(text="CONNETTI", state="normal", fg_color=COLORS["primary"])
-        self.code_entry.configure(state="normal")
+        # It's possible the frame or widgets were destroyed while the background
+        # thread completed (navigation to another screen). Guard against
+        # TclError / invalid command by checking widget existence and
+        # swallowing TclError if it occurs.
+        try:
+            if getattr(self, 'connect_btn', None) is not None and self.connect_btn.winfo_exists():
+                self.connect_btn.configure(text="CONNETTI", state="normal", fg_color=COLORS["primary"])
+        except Exception:
+            # Best-effort: ignore errors restoring UI when widget is gone
+            pass
+
+        try:
+            if getattr(self, 'code_entry', None) is not None and self.code_entry.winfo_exists():
+                self.code_entry.configure(state="normal")
+        except Exception:
+            pass

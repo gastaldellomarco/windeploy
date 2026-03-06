@@ -325,6 +325,45 @@ export default function DashboardPage() {
         </div>
       </Panel>
 
+      <section className="space-y-3 min-w-0">
+        <div className="text-sm font-semibold text-slate-900">
+          PC configurati (ultimi 30 giorni)
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm min-w-0">
+          <div className="h-72 min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E6E7EB" />
+                <XAxis
+                  dataKey="label"
+                  stroke="#475569"
+                  tickLine={false}
+                  axisLine={{ stroke: "#E6E7EB" }}
+                />
+                <YAxis
+                  stroke="#475569"
+                  tickLine={false}
+                  axisLine={{ stroke: "#E6E7EB" }}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  cursor={{ fill: "rgba(15, 23, 42, 0.04)" }}
+                  contentStyle={{
+                    background: "#FFFFFF",
+                    border: "1px solid rgba(148,163,184,0.12)",
+                    borderRadius: 8,
+                    color: "#0F172A",
+                  }}
+                  labelStyle={{ color: "#0F172A" }}
+                />
+                <Bar dataKey="configured" fill="#0EA5E9" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </section>
+
       {/* 2) GRAFICO */}
       <Panel
         title="PC configurati per settimana (ultimi 30 giorni)"

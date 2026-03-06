@@ -1,226 +1,161 @@
+# agent/gui/screens/screen_overview.py
 import customtkinter as ctk
-import threading
-import json
-import datetime
-from pathlib import Path
-from agent.config import COLORS, DEV_MODE
-from agent.api_client import APIClient
+
+# Fallback robusto per i colori: mappa le costanti dirette al dict COLORS se non esistono globalmente
+try:
+    from config import DARK_BG, ACCENT, TEXT_MAIN, TEXT_MUTED, WARNING_COLOR, SUCCESS_COLOR, ERROR_COLOR, BORDER_COLOR, PRIMARY_HOVER
+except ImportError:
+    from config import COLORS
+    DARK_BG = COLORS.get("bg_main", "#111827")
+    ACCENT = COLORS.get("primary", "#2563EB")
+    PRIMARY_HOVER = COLORS.get("primary_hover", "#1D4ED8")
+    TEXT_MAIN = COLORS.get("text_main", "#F9FAFB")
+    TEXT_MUTED = COLORS.get("text_muted", "#9CA3AF")
+    SUCCESS_COLOR = COLORS.get("success", "#10B981")
+    ERROR_COLOR = COLORS.get("error", "#EF4444")
+    BORDER_COLOR = COLORS.get("border", "#374151")
+    WARNING_COLOR = "#EAB308"  # Giallo warning standard Tailwind
 
 
 class ScreenOverview(ctk.CTkFrame):
-    """Overview screen shown after successful auth."""
-
-    def __init__(self, parent, controller):
-        super().__init__(parent, fg_color=COLORS["bg_card"])
-        self.controller = controller
-
-        self.title = ctk.CTkLabel(
-            self,
-            text="Connessione effettuata",
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=COLORS["text_main"],
+    def __init__(self, master, wizard_config: dict, on_start: callable, on_back: callable):
+        super().__init__(master, fg_color="transparent")
+        self.wizard_config = wizard_config
+        self.on_start = on_start
+        self.on_back = on_back
+        
+        # Configurazione layout a griglia base
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(2, weight=1)  # Spazio espandibile per il contenuto
+        
+        # --- Header ---
+        self.title_label = ctk.CTkLabel(
+            self, 
+            text="Riepilogo configurazione", 
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=TEXT_MAIN
         )
-        self.title.pack(pady=(40, 10))
-
-        self.info = ctk.CTkLabel(
-            self,
-            text="Caricamento configurazione...",
-            font=ctk.CTkFont(size=14),
-            text_color=COLORS["text_muted"],
+        self.title_label.grid(row=0, column=0, pady=(20, 5))
+        
+        self.subtitle_label = ctk.CTkLabel(
+            self, 
+            text="Verifica i dati prima di avviare — le operazioni non sono reversibili", 
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=WARNING_COLOR
         )
-        self.info.pack(pady=(10, 20))
+        self.subtitle_label.grid(row=1, column=0, pady=(0, 20))
+        
+        # --- Layout Centrato a due colonne ---
+        self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.content_frame.grid(row=2, column=0, sticky="nsew", padx=40)
+        self.content_frame.grid_columnconfigure(0, weight=1)
+        self.content_frame.grid_columnconfigure(1, weight=1)
+        self.content_frame.grid_rowconfigure(0, weight=1)
+        self.content_frame.grid_rowconfigure(1, weight=1)
+        
+        # 1. Sezione Identità PC (Sinistra Alto)
+        self.identity_frame = ctk.CTkFrame(self.content_frame, fg_color=DARK_BG, border_color=BORDER_COLOR, border_width=1)
+        self.identity_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        
+        ctk.CTkLabel(self.identity_frame, text="Identità PC", font=ctk.CTkFont(size=16, weight="bold"), text_color=ACCENT).pack(anchor="w", padx=15, pady=(15, 10))
+        
+        # Utilizzo safe access con fallback per prevenire KeyError
+        pc_name = self.wizard_config.get("pc_name", "Non specificato")
+        admin_user = self.wizard_config.get("admin_user", {}).get("username", "Non specificato")
+        domain = self.wizard_config.get("domain", "WORKGROUP")
+        
+        self._add_info_row(self.identity_frame, "Nome PC:", pc_name)
+        self._add_info_row(self.identity_frame, "Utente admin:", admin_user)
+        self._add_info_row(self.identity_frame, "Dominio/WG:", domain)
+        
+        # 2. Sezione Operazioni di sistema (Sinistra Basso)
+        self.sys_frame = ctk.CTkFrame(self.content_frame, fg_color=DARK_BG, border_color=BORDER_COLOR, border_width=1)
+        self.sys_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        
+        ctk.CTkLabel(self.sys_frame, text="Operazioni di sistema", font=ctk.CTkFont(size=16, weight="bold"), text_color=ACCENT).pack(anchor="w", padx=15, pady=(15, 10))
+        
+        power_plan = self.wizard_config.get("power_plan", "Balanced")
+        bloatware_list = self.wizard_config.get("bloatware_to_remove", [])
+        bloatware_text = f"{len(bloatware_list)} app selezionate per la rimozione"
+        
+        self._add_info_row(self.sys_frame, "Power plan:", power_plan)
+        self._add_info_row(self.sys_frame, "Bloatware:", bloatware_text)
+        
+        extras = self.wizard_config.get("extras", {})
+        extras_frame = ctk.CTkFrame(self.sys_frame, fg_color="transparent")
+        extras_frame.pack(fill="x", padx=15, pady=5)
+        
+        if not extras:
+            ctk.CTkLabel(extras_frame, text="Nessun extra selezionato", text_color=TEXT_MUTED).pack(anchor="w")
+        else:
+            ctk.CTkLabel(extras_frame, text="Extras:", font=ctk.CTkFont(weight="bold"), text_color=TEXT_MUTED).pack(anchor="w")
+            for key, value in extras.items():
+                icon = "✓" if value else "✗"
+                color = SUCCESS_COLOR if value else ERROR_COLOR
+                row = ctk.CTkFrame(extras_frame, fg_color="transparent")
+                row.pack(fill="x", padx=10, pady=2)
+                ctk.CTkLabel(row, text=icon, text_color=color, font=ctk.CTkFont(weight="bold")).pack(side="left")
+                ctk.CTkLabel(row, text=str(key), text_color=TEXT_MAIN).pack(side="left", padx=5)
+        
+        # 3. Sezione Software da installare (Destra Altezza Piena)
+        self.software_frame = ctk.CTkFrame(self.content_frame, fg_color=DARK_BG, border_color=BORDER_COLOR, border_width=1)
+        self.software_frame.grid(row=0, column=1, rowspan=2, sticky="nsew", padx=10, pady=10)
+        
+        ctk.CTkLabel(self.software_frame, text="Software da installare", font=ctk.CTkFont(size=16, weight="bold"), text_color=ACCENT).pack(anchor="w", padx=15, pady=(15, 10))
+        
+        self.software_scroll = ctk.CTkScrollableFrame(self.software_frame, fg_color="transparent")
+        self.software_scroll.pack(fill="both", expand=True, padx=10, pady=(0, 15))
+        
+        software_list = self.wizard_config.get("software_list", [])
+        if not software_list:
+            ctk.CTkLabel(self.software_scroll, text="Nessun software selezionato", text_color=TEXT_MUTED).pack(pady=20)
+        else:
+            for sw in software_list:
+                nome_sw = sw.get("name", str(sw)) if isinstance(sw, dict) else str(sw)
+                sw_row = ctk.CTkFrame(self.software_scroll, fg_color="transparent")
+                sw_row.pack(fill="x", pady=2)
+                ctk.CTkLabel(sw_row, text="✓", text_color=SUCCESS_COLOR, font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(5, 10))
+                ctk.CTkLabel(sw_row, text=nome_sw, text_color=TEXT_MAIN).pack(side="left")
 
-        self.ok_btn = ctk.CTkButton(
-            self,
-            text="AVVIA ESECUZIONE",
+        # --- Footer Bottoni ---
+        self.buttons_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.buttons_frame.grid(row=3, column=0, pady=30)
+        
+        self.btn_back = ctk.CTkButton(
+            self.buttons_frame,
+            text="← Indietro",
+            fg_color=BORDER_COLOR,
+            hover_color=TEXT_MUTED,
+            text_color=TEXT_MAIN,
+            width=150,
+            height=40,
+            font=ctk.CTkFont(weight="bold"),
+            command=self.on_back
+        )
+        self.btn_back.pack(side="left", padx=10)
+        
+        self.btn_start = ctk.CTkButton(
+            self.buttons_frame,
+            text="▶ Avvia configurazione",
+            fg_color=ACCENT,
+            hover_color=PRIMARY_HOVER,
+            text_color=TEXT_MAIN,
             width=200,
-            command=self._on_start,
-            fg_color=COLORS["primary"],
-            hover_color=COLORS["primary_hover"],
+            height=40,
+            font=ctk.CTkFont(weight="bold"),
+            command=self._handle_start
         )
-        self.ok_btn.pack(pady=20)
+        self.btn_start.pack(side="left", padx=10)
 
-        self.status_label = ctk.CTkLabel(
-            self, text="", font=ctk.CTkFont(size=12), text_color=COLORS["error"]
-        )
-        self.status_label.pack(pady=(5, 0))
+    def _add_info_row(self, parent, label_text, value_text):
+        """Helper interno per renderizzare righe chiave/valore in modo uniforme."""
+        row = ctk.CTkFrame(parent, fg_color="transparent")
+        row.pack(fill="x", padx=15, pady=5)
+        ctk.CTkLabel(row, text=label_text, text_color=TEXT_MUTED, width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row, text=str(value_text), text_color=TEXT_MAIN, anchor="w").pack(side="left", fill="x", expand=True)
 
-    # ------------------------------------------------------------------ #
-    #  Helper: aggiorna widget da thread secondario in modo sicuro        #
-    # ------------------------------------------------------------------ #
-    def _set_status(self, text: str, color: str = None):
-        """Thread-safe: aggiorna status_label nel main thread."""
-        c = color or COLORS["error"]
-        self.after(0, lambda: self.status_label.configure(text=text, text_color=c))
-
-    def _restore_button(self):
-        """Thread-safe: riabilita il bottone nel main thread."""
-        self.after(0, lambda: self.ok_btn.configure(
-            state="normal",
-            text="AVVIA ESECUZIONE",
-            fg_color=COLORS["primary"],
-        ))
-
-    # ------------------------------------------------------------------ #
-    #  Lifecycle                                                           #
-    # ------------------------------------------------------------------ #
-    def on_show(self, app_state: dict):
-        """Aggiorna la UI con i dati dell'app_state al momento della navigazione."""
-        # Reset status
-        self.after(0, lambda: self.status_label.configure(text=""))
-        self.after(0, lambda: self.ok_btn.configure(state="normal", text="AVVIA ESECUZIONE"))
-
-        wizard = app_state.get("wizard_config") or {}
-        if isinstance(wizard, str):
-            try:
-                wizard = json.loads(wizard)
-            except Exception:
-                wizard = {}
-
-        # Supporta più nomi di chiave possibili dal backend
-        name = (
-            wizard.get("pc_name")
-            or wizard.get("nome_pc")
-            or wizard.get("nome")
-            or "PC non specificato"
-        )
-
-        software_list = wizard.get("software", [])
-        software_count = len(software_list) if isinstance(software_list, list) else 0
-
-        uninstall_list = wizard.get("uninstall") or wizard.get("disinstalla", [])
-        uninstall_count = len(uninstall_list) if isinstance(uninstall_list, list) else 0
-
-        summary = f"PC: {name} • Software: {software_count} • Disinstallazioni: {uninstall_count}"
-        self.after(0, lambda s=summary: self.info.configure(text=s))
-
-        token = app_state.get("auth_token")
-        if token:
-            self.after(0, lambda: self.status_label.configure(
-                text="Token ricevuto. Pronto all'avvio.",
-                text_color=COLORS.get("success", "#22c55e"),
-            ))
-
-    # ------------------------------------------------------------------ #
-    #  Avvio esecuzione                                                    #
-    # ------------------------------------------------------------------ #
-    def _on_start(self):
-        token = self.controller.app_state.get("auth_token")
-        wizard_config = self.controller.app_state.get("wizard_config", {})
-
-        if not token:
-            self._set_status("Token mancante. Torna alla schermata di connessione.")
-            return
-
-        self.ok_btn.configure(state="disabled", text="AVVIO IN CORSO...",
-                              fg_color=COLORS["border"])
-        self.after(0, lambda: self.status_label.configure(
-            text="Avvio esecuzione in corso...",
-            text_color=COLORS["text_muted"],
-        ))
-
-        threading.Thread(
-            target=self._start_thread,
-            args=(token, wizard_config),
-            daemon=True,
-        ).start()
-
-    def _start_thread(self, token: str, wizard_config: dict):
-        client = APIClient()
-        try:
-            resp = client.start_execution(wizard_config, token=token)
-
-            # ---- Risposta 200 OK ----------------------------------------
-            if resp.status_code == 200:
-                try:
-                    data = resp.json()
-                except Exception:
-                    data = None
-
-                if not data:
-                    saved_msg = self._save_debug_response(resp, "start_response")
-                    self._set_status(f"Risposta non JSON dal server. {saved_msg}")
-                    return
-
-                execution_log_id = data.get("execution_log_id")
-                if not execution_log_id:
-                    detail = json.dumps(data)[:300]
-                    saved_msg = self._save_debug_json(data, "start_json")
-                    self._set_status(
-                        f"execution_log_id mancante nella risposta. {saved_msg}\n{detail}"
-                    )
-                    return
-
-                # ✅ Successo: naviga alla schermata di progresso
-                payload = {
-                    "wizard_config": wizard_config,
-                    "execution_log_id": execution_log_id,
-                    "auth_token": token,
-                }
-                self.after(0, self.controller.navigate, "ScreenProgress", payload)
-                return  # non eseguire _restore_button: la schermata cambierà
-
-            # ---- Errore HTTP ≠ 200 --------------------------------------
-            friendly = None
-            try:
-                body = resp.json()
-                friendly = body.get("message")
-                # Includi anche gli errori di validazione Laravel
-                if not friendly and body.get("errors"):
-                    errors = body["errors"]
-                    friendly = " | ".join(
-                        f"{k}: {v[0]}" for k, v in errors.items()
-                    )
-            except Exception:
-                pass
-
-            if friendly:
-                self._set_status(f"Errore {resp.status_code}: {friendly}")
-            else:
-                saved = self._save_debug_response(resp, "start_error")
-                self._set_status(
-                    f"Errore server ({resp.status_code}). Risposta salvata: {saved}"
-                )
-
-        except Exception as e:
-            self._set_status(f"Eccezione: {type(e).__name__}: {e}")
-
-        finally:
-            self._restore_button()
-
-    # ------------------------------------------------------------------ #
-    #  Utility debug                                                       #
-    # ------------------------------------------------------------------ #
-    def _save_debug_response(self, resp, prefix: str) -> str:
-        try:
-            debug_dir = Path(__file__).resolve().parents[2] / "storage" / "backend_responses"
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            ts = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-            fname = debug_dir / f"{prefix}_{resp.status_code}_{ts}.html"
-            fname.write_text(resp.text or "", encoding="utf-8")
-            if DEV_MODE:
-                try:
-                    import webbrowser
-                    webbrowser.open(str(fname.resolve()))
-                except Exception:
-                    pass
-            return fname.name
-        except Exception as e:
-            return f"(impossibile salvare: {e})"
-
-    def _save_debug_json(self, data: dict, prefix: str) -> str:
-        try:
-            debug_dir = Path(__file__).resolve().parents[2] / "storage" / "backend_responses"
-            debug_dir.mkdir(parents=True, exist_ok=True)
-            ts = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-            fname = debug_dir / f"{prefix}_{ts}.json"
-            fname.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            if DEV_MODE:
-                try:
-                    import webbrowser
-                    webbrowser.open(str(fname.resolve()))
-                except Exception:
-                    pass
-            return fname.name
-        except Exception as e:
-            return f"(impossibile salvare: {e})"
+    def _handle_start(self):
+        """Previene il double-click disabilitando il tasto e avvia il callback."""
+        self.btn_start.configure(state="disabled")
+        self.btn_back.configure(state="disabled")
+        self.on_start()

@@ -1,0 +1,152 @@
+# =============================================
+# Environment & Secrets (CRITICAL — NEVER PUSH)
+# =============================================
+.env
+.env.backup
+.env.production
+.env.local
+.env.*.local
+config.local.py
+auth.json
+
+# =============================================
+# IDE & Editor
+# =============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# =============================================
+# OS
+# =============================================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.lnk
+
+# =============================================
+# Build & Dependencies (Re-install via npm/composer/pip)
+# =============================================
+node_modules/
+vendor/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv
+venv/
+env/
+ENV/
+
+# =============================================
+# Build Artifacts
+# =============================================
+*.phar
+*.zip
+*.tar.gz
+*.rar
+*.exe (conditional — only excludes build artifacts)
+
+# =============================================
+# Logs & Temporary Files
+# =============================================
+*.log
+logs/
+tmp_*.php
+tmp_*.py
+tmp_*.sql
+tmp_*.txt
+*.swp
+*.swo
+
+# =============================================
+# Cache
+# =============================================
+.phpunit.cache/
+.pytest_cache/
+.eslintcache
+.next/
+out/
+coverage/
+
+# =============================================
+# Laravel Specific
+# =============================================
+/backend/storage/logs/
+/backend/storage/debugbar/
+/backend/bootstrap/cache/*.php
+/backend/.phpunit.result.cache
+
+# =============================================
+# Development Scripts
+# =============================================
+scripts/dev/
+scripts/local/
+
+# =============================================
+# Windows PowerShell (local dev only)
+# =============================================
+*.ps1
+
+# =============================================
+# macOS
+# =============================================
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# =============================================
+# IDE specific
+# =============================================
+*.sublime-workspace
+*.sublime-project
+*.project
+*.pydevproject
+.project
+.settings/
+.classpath
+
+# =============================================
+# Node.js
+# =============================================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.eslintcache
+
+# =============================================
+# Python
+# =============================================
+.Python
+*.egg
+*.egg-info
+dist
+build
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.hypothesis/
+
+# =============================================
+# Editor lock files
+# =============================================
+*.lock
+package-lock.json
+composer.lock (NOT ignored — dependencies should be locked)

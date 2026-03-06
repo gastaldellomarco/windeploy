@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Template\TemplateController;
 use App\Http\Controllers\Api\Software\SoftwareController;
 use App\Http\Controllers\Api\Report\ReportController;
 use App\Http\Controllers\Api\Agent\AgentController;
+use App\Http\Controllers\Api\Agent\AgentAuthController;
 use App\Http\Controllers\Api\User\UserController;
 
 /*
@@ -21,161 +22,83 @@ use App\Http\Controllers\Api\User\UserController;
 |
 */
 
-/*
-|--------------------------------------------------------------------------
-| Health check API (opzionale, /api/ping)
-|--------------------------------------------------------------------------
-*/
+/* Health check and lightweight stats */
 Route::get('/ping', function () {
     return response()->json(['status' => 'ok']);
 });
 
-/*
-|--------------------------------------------------------------------------
-| AUTH (Sanctum) - Login/logout/refresh/me per web app React
-| Prefix: /api/auth
-|--------------------------------------------------------------------------
-*/
-Route::prefix('auth')->group(function () {
-    // Login utente (email/password) -> crea sessione/token Sanctum
-    Route::post('/login', [AuthController::class, 'login'])
-        ->name('auth.login');
-
-    // Logout utente -> revoca token/sessione corrente
-    Route::post('/logout', [AuthController::class, 'logout'])
-        ->middleware('auth:sanctum')
-        ->name('auth.logout');
-
-    // Refresh token/sessione (se usi un meccanismo di refresh custom)
-    Route::post('/refresh', [AuthController::class, 'refresh'])
-        ->middleware('auth:sanctum')
-        ->name('auth.refresh');
-
-    // Restituisce i dati dell'utente autenticato
-    Route::get('/me', [AuthController::class, 'me'])
-        ->middleware('auth:sanctum')
-        ->name('auth.me');
+Route::get('/stats', function () {
+    return response()->json([
+        'pc_mese' => 0,
+        'wizard_attivi' => 0,
+        'software_top' => null,
+        'errori' => 0,
+        'grafico_settimanale' => [],
+    ]);
 });
 
-/*
-|--------------------------------------------------------------------------
-| API protette per WEB APP (middleware: auth:sanctum)
-|--------------------------------------------------------------------------
-|
-| Tutte le rotte qui dentro richiedono autenticazione web app.
-|
-*/
+/* AUTH (Sanctum) */
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [AuthController::class, 'login'])->name('auth.login');
+    Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum')->name('auth.logout');
+    Route::post('/refresh', [AuthController::class, 'refresh'])->middleware('auth:sanctum')->name('auth.refresh');
+    Route::get('/me', [AuthController::class, 'me'])->middleware('auth:sanctum')->name('auth.me');
+});
+
+/* Protected web app routes (auth:sanctum) */
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/debug/me', function (Request $request) {
+        $user = $request->user();
 
-    /*
-    |----------------------------------------------------------------------
-    | WIZARDS - CRUD + genera codice + monitor
-    | Prefix implicito: /api/wizards
-    |----------------------------------------------------------------------
-    */
+        if (! $user) {
+            return response()->json(['user' => null], 200);
+        }
 
-    // CRUD completo dei wizard (index, store, show, update, destroy)
+        return response()->json([
+            'user' => $user->only(['id', 'nome', 'email', 'ruolo']),
+            'roles' => method_exists($user, 'getRoleNames') ? $user->getRoleNames() : [],
+        ]);
+    });
+
+    // Wizards CRUD + extras
     Route::apiResource('wizards', WizardController::class);
+    Route::post('wizards/{wizard}/generate-code', [WizardController::class, 'generateCode'])->name('wizards.generate-code');
+    Route::get('wizards/{wizard}/monitor', [WizardController::class, 'monitor'])->name('wizards.monitor');
 
-    // Genera codice univoco per il wizard (es. WD-7A3F) + scadenza
-    Route::post('wizards/{wizard}/generate-code', [WizardController::class, 'generateCode'])
-        ->name('wizards.generate-code');
+    // Templates accessible to admin + tecnico, but disallow destroy via API for safety
+    Route::middleware('role:admin,tecnico')->group(function () {
+        Route::apiResource('templates', TemplateController::class)->except(['destroy']);
+    });
 
-    // Monitor real-time stato esecuzione wizard (polling logs)
-    Route::get('wizards/{wizard}/monitor', [WizardController::class, 'monitor'])
-        ->name('wizards.monitor');
-
-    /*
-    |----------------------------------------------------------------------
-    | TEMPLATES - CRUD
-    | Prefix: /api/templates
-    |----------------------------------------------------------------------
-    */
-
-    // CRUD template wizard (globali + personali)
-    Route::apiResource('templates', TemplateController::class);
-
-    /*
-    |----------------------------------------------------------------------
-    | SOFTWARE LIBRARY - CRUD + toggleActive
-    | Prefix: /api/software
-    |----------------------------------------------------------------------
-    */
-
-    // CRUD libreria software (nome, versione, tipo winget/custom, ecc.)
-    Route::apiResource('software', SoftwareController::class);
-
-    // Attiva/disattiva una entry software (non viene eliminata fisicamente)
-    Route::patch('software/{software}/toggle-active', [SoftwareController::class, 'toggleActive'])
-        ->name('software.toggle-active');
-
-    /*
-    |----------------------------------------------------------------------
-    | REPORTS - lista + dettaglio + download
-    | Prefix: /api/reports
-    |----------------------------------------------------------------------
-    */
-
-    // Lista report con filtri (data, tecnico, stato, ecc.)
-    Route::get('reports', [ReportController::class, 'index'])
-        ->name('reports.index');
-
-    // Dettaglio singolo report (JSON + eventuale HTML embeddato)
-    Route::get('reports/{report}', [ReportController::class, 'show'])
-        ->name('reports.show');
-
-    // Download report HTML come file (Content-Disposition: attachment)
-    Route::get('reports/{report}/download', [ReportController::class, 'download'])
-        ->name('reports.download');
-
-    /*
-    |----------------------------------------------------------------------
-    | USERS (Admin only) - CRUD
-    | Prefix: /api/users
-    | Middleware extra: role:admin (Spatie)
-    |----------------------------------------------------------------------
-    */
-
+    // Software and users: admin only
     Route::middleware('role:admin')->group(function () {
-        // CRUD completo utenti (admin crea/modifica/disattiva utenti)
+        Route::apiResource('software', SoftwareController::class);
+        Route::patch('software/{software}/toggle-active', [SoftwareController::class, 'toggleActive'])->name('software.toggle-active');
         Route::apiResource('users', UserController::class);
     });
+
+    // Reports (list, show, download)
+    Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::get('reports/{report}', [ReportController::class, 'show'])->name('reports.show');
+    Route::get('reports/{report}/download', [ReportController::class, 'download'])->name('reports.download');
 });
 
-/*
-|--------------------------------------------------------------------------
-| AGENT (JWT) - Endpoint per eseguibile Windows
-| Prefix: /api/agent
-|--------------------------------------------------------------------------
-|
-| Queste rotte sono pensate per l'agent Python (CustomTkinter) che gira
-| su Windows e comunica via HTTPS con il backend.
-|
-*/
+/* AGENT (JWT) - Endpoint per eseguibile Windows */
 Route::prefix('agent')->group(function () {
+    // ──────────────────────────────────────────────────────────────────────
+    // Route pubblica per autenticazione agent: throttle:agent_auth applicato
+    // SOLO a questo endpoint perché è l'unico senza JWT.
+    //
+    // IMPORTANTE: NON applicare throttle:agent_auth alle route /agent/*
+    // successive (step, complete, ecc.) che sono già protette da JWT e
+    // usano il limiter 'agent' separato.
+    // ──────────────────────────────────────────────────────────────────────
+    Route::post('/auth', [AgentAuthController::class, 'auth'])->middleware('throttle:agent_auth')->name('agent.auth');
 
-    // Autenticazione agent -> ritorna JWT per successive chiamate
-    Route::post('/auth', [AgentController::class, 'auth'])
-        ->middleware('throttle:login') // 5 tentativi
-        ->name('agent.auth');
-
-    // Rotte protette da JWT (guard "api" con driver jwt)
     Route::middleware(['auth:api', 'throttle:agent'])->group(function () {
-
-        // Avvio esecuzione wizard su un PC (inizio sessione)
-        Route::post('/start', [AgentController::class, 'start'])
-            ->name('agent.start');
-
-        // Invio step intermedi (log, stato corrente, percentuale)
-        Route::post('/step', [AgentController::class, 'step'])
-            ->name('agent.step');
-
-        // Segnala completamento wizard (successo o con errori)
-        Route::post('/complete', [AgentController::class, 'complete'])
-            ->name('agent.complete');
-
-        // Abort manuale/forzato del wizard sul PC
-        Route::post('/abort', [AgentController::class, 'abort'])
-            ->name('agent.abort');
+        Route::post('/start', [AgentController::class, 'start'])->name('agent.start');
+        Route::post('/step', [\App\Http\Controllers\Api\Agent\AgentStepController::class, 'step'])->name('agent.step');
+        Route::post('/complete', [AgentController::class, 'complete'])->name('agent.complete');
+        Route::post('/abort', [AgentController::class, 'abort'])->name('agent.abort');
     });
 });

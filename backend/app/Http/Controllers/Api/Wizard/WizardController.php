@@ -11,6 +11,7 @@ use App\Http\Resources\WizardResource;
 use App\Models\ExecutionLog;
 use App\Models\Wizard;
 use App\Services\EncryptionService;
+use App\Services\WizardCodeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Gate;
@@ -19,10 +20,12 @@ use Symfony\Component\HttpFoundation\Response;
 class WizardController extends Controller
 {
     protected EncryptionService $encryption;
+    protected WizardCodeService $wizardCodeService;
 
-    public function __construct(EncryptionService $encryption)
+    public function __construct(EncryptionService $encryption, WizardCodeService $wizardCodeService)
     {
         $this->encryption = $encryption;
+        $this->wizardCodeService = $wizardCodeService;
     }
 
     /**
@@ -70,7 +73,7 @@ class WizardController extends Controller
         $data = $request->validated();
 
         // Genera codice univoco
-        $data['codice_univoco'] = $this->generateUniqueCode();
+    $data['codice_univoco'] = $this->wizardCodeService->generateUnique();
 
         // Cifra password con EncryptionService (usa wizard id ancora non noto, quindi salt provvisorio)
         // Dovremo salvare prima il wizard per avere l'id, poi aggiornare la configurazione cifrata.
@@ -80,12 +83,12 @@ class WizardController extends Controller
 
         if (isset($config['utente_admin']['password'])) {
             $plain = $config['utente_admin']['password'];
-            $config['utente_admin']['password_encrypted'] = $this->encryption->encryptForWizard($plain, $salt);
+            $config['utente_admin']['password_encrypted'] = $this->encryption->encrypt($plain);
             unset($config['utente_admin']['password']);
         }
         if (isset($config['extras']['wifi']['password'])) {
             $plain = $config['extras']['wifi']['password'];
-            $config['extras']['wifi']['password_encrypted'] = $this->encryption->encryptForWizard($plain, $salt);
+            $config['extras']['wifi']['password_encrypted'] = $this->encryption->encrypt($plain);
             unset($config['extras']['wifi']['password']);
         }
         $data['configurazione'] = $config;
@@ -129,8 +132,7 @@ class WizardController extends Controller
         // Se viene fornita una nuova password, cifrarla
         if (isset($data['configurazione']['utente_admin']['password'])) {
             $plain = $data['configurazione']['utente_admin']['password'];
-            $salt = $wizard->codice_univoco;
-            $data['configurazione']['utente_admin']['password_encrypted'] = $this->encryption->encryptForWizard($plain, $salt);
+            $data['configurazione']['utente_admin']['password_encrypted'] = $this->encryption->encrypt($plain);
             unset($data['configurazione']['utente_admin']['password']);
         }
 
@@ -162,15 +164,14 @@ class WizardController extends Controller
             return response()->json(['message' => 'Azione non consentita.'], Response::HTTP_FORBIDDEN);
         }
 
-        $nuovoCodice = $this->generateUniqueCode();
+        $code = $this->wizardCodeService->generate($wizard->id);
 
-        $wizard->codice_univoco = $nuovoCodice;
-        $wizard->expires_at = now()->addHours(24);
-        $wizard->save();
+        // refresh to get updated expires_at
+        $wizard->refresh();
 
         return response()->json([
-            'codice_univoco' => $nuovoCodice,
-            'expires_at'     => $wizard->expires_at->toIso8601String(),
+            'codice_univoco' => $code,
+            'expires_at'     => $wizard->expires_at?->toIso8601String(),
         ]);
     }
 
@@ -201,12 +202,5 @@ class WizardController extends Controller
     /**
      * Genera un codice univoco nel formato WD-XXXX (6 caratteri totali).
      */
-    private function generateUniqueCode(): string
-    {
-        do {
-            $code = 'WD-' . strtoupper(Str::random(4));
-        } while (Wizard::where('codice_univoco', $code)->exists());
-
-        return $code;
-    }
+    // generateUniqueCode removed — generation is handled by WizardCodeService
 }

@@ -10,6 +10,7 @@ import Step2NomePC from './Steps/Step2NomePC';
 import Step3Utente from './Steps/Step3Utente';
 import Step4Software from './Steps/Step4Software';
 import Step5Bloatware from './Steps/Step5Bloatware';
+import { BLOATWARE_LIST } from '../../data/bloatware';
 import Step6PowerPlan from './Steps/Step6PowerPlan';
 import Step7Extra from './Steps/Step7Extra';
 import Step8Recap from './Steps/Step8Recap';
@@ -200,6 +201,11 @@ async function fetchTemplates() {
   return res.data;
 }
 
+async function fetchSoftware() {
+  const res = await client.get('/software');
+  return res.data;
+}
+
 function normalizeTemplates(payload) {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
@@ -218,8 +224,13 @@ function getTemplateRow(item) {
 }
 
 async function createWizardApi(payload) {
-  const res = await client.post('/wizards', payload);
-  return res.data;
+  try {
+    const response = await client.post('/wizards', payload);
+    return response.data;
+  } catch (error) {
+    console.error('Wizard create error:', error?.response?.data || error);
+    throw error;
+  }
 }
 
 export default function WizardBuilderPage() {
@@ -251,6 +262,21 @@ export default function WizardBuilderPage() {
     queryFn: fetchTemplates,
     staleTime: 30 * 1000,
   });
+
+  const softwareQuery = useQuery({
+    queryKey: ['software'],
+    queryFn: fetchSoftware,
+    staleTime: 30 * 1000,
+  });
+
+  const availableSoftware = useMemo(() => {
+    const payload = softwareQuery.data;
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload.map((s) => (s.data ? s.data : s));
+    if (payload.data && Array.isArray(payload.data)) return payload.data;
+    if (payload.data && payload.data.data && Array.isArray(payload.data.data)) return payload.data.data;
+    return [];
+  }, [softwareQuery.data]);
 
   const templates = useMemo(() => normalizeTemplates(templatesQuery.data).map(getTemplateRow), [templatesQuery.data]);
 
@@ -296,8 +322,19 @@ export default function WizardBuilderPage() {
 
       window.localStorage.removeItem(LS_KEY);
     },
-    onError: (err) => {
-      setGlobalError(String(err?.response?.data?.message || err?.message || 'Errore generazione wizard'));
+    onError: (error) => {
+      console.error('Wizard create status:', error?.response?.status);
+      console.error('Wizard create payload error:', error?.response?.data || error);
+
+      const validationErrors = error?.response?.data?.errors;
+      if (validationErrors) {
+        const firstError = Object.values(validationErrors).flat()[0];
+        setGlobalError(firstError || 'Errore di validazione durante la creazione del wizard.');
+      } else {
+        setGlobalError(error?.response?.data?.message || error?.message || 'Errore imprevisto durante la creazione del wizard.');
+      }
+
+      throw error;
     },
   });
 
@@ -398,55 +435,80 @@ export default function WizardBuilderPage() {
   }
 
   function buildApiPayload() {
-    const configurazione = {
-      nomepc: wizard.pcName.formattedPreview,
-      utenteadmin: {
-        username: wizard.localAdmin.username,
-        password: wizard.localAdmin.password,
-      },
-      softwareinstalla: wizard.software.selectedIds,
-      bloatwaredefault: wizard.bloatware.preselected,
-      powerplan: wizard.powerPlan.manual
-        ? {
-            tipo: 'custom',
-            params: {
-              monitortimeoutac: wizard.powerPlan.screenTimeoutMin,
-              sleeptimeoutac: wizard.powerPlan.sleepNever ? 0 : wizard.powerPlan.sleepTimeoutMin,
-              cpuminpercent: wizard.powerPlan.cpuMinPercent,
-              cpumaxpercent: wizard.powerPlan.cpuMaxPercent,
-            },
-          }
-        : {
-            tipo: 'preset',
-            params: { preset: wizard.powerPlan.preset },
-          },
-      extras: {
-        timezone: wizard.extras.timezone,
-        language: wizard.extras.language,
-        keyboardlayout: wizard.extras.keyboardLayout,
-        windowsupdate: { policy: wizard.extras.windowsUpdatePolicy },
-        removemicrosoftaccount: wizard.localAdmin.removeMicrosoftSetupAccount,
-        wifi: wizard.extras.wifiEnabled
-          ? { ssid: wizard.extras.wifiSsid, password: wizard.extras.wifiPassword }
-          : null,
+  // availableSoftware comes from the softwareQuery; BLOATWARE_LIST is imported
+  const softwareSource = availableSoftware || [];
+  const bloatwareSource = BLOATWARE_LIST || [];
+
+    const softwareItems = (softwareSource || [])
+      .filter((item) => wizard.software.selectedIds.includes(item.id))
+      .map((item) => ({
+        id: Number(item.id),
+        winget_id: String(item.identificatore ?? item.winget_id ?? ''),
+        name: String(item.nome ?? item.name ?? ''),
+        type: String(item.tipo ?? item.type ?? 'winget'),
+        download_url: item.download_url ?? null,
+      }));
+
+    const bloatwareItems = (bloatwareSource || []).map((item) => ({
+      package_name: String(item.package_name),
+      display_name: String(item.display_name),
+      selected: Array.isArray(wizard.bloatware.preselected) ? wizard.bloatware.preselected.includes(item.package_name) : false,
+    }));
+
+    const payload = {
+      nome: wizard.meta.wizardName,
+      template_id: wizard.meta.templateId || null,
+      note_interne: wizard.meta.internalNotes || null,
+      configurazione: {
+        version: '1.0',
+        pc_name: wizard.pcName.formattedPreview,
+        admin_user: {
+          username: wizard.localAdmin.username,
+          password: wizard.localAdmin.password,
+          remove_setup_account: Boolean(wizard.localAdmin.removeMicrosoftSetupAccount),
+        },
+        software: softwareItems,
+        bloatware: bloatwareItems,
+        power_plan: {
+          type: wizard.powerPlan.manual
+            ? 'custom'
+            : wizard.powerPlan.preset === 'prestazioni_elevate'
+            ? 'high_performance'
+            : wizard.powerPlan.preset === 'risparmio_energetico'
+            ? 'power_saver'
+            : 'balanced',
+          screen_timeout_ac: wizard.powerPlan.screenTimeoutMin ?? null,
+          sleep_timeout_ac: wizard.powerPlan.sleepNever ? null : wizard.powerPlan.sleepTimeoutMin ?? null,
+          cpu_min_percent: wizard.powerPlan.cpuMinPercent ?? 0,
+          cpu_max_percent: wizard.powerPlan.cpuMaxPercent ?? 100,
+        },
+        extras: {
+          timezone: wizard.extras.timezone || null,
+          language: wizard.extras.language || null,
+          keyboard_layout: wizard.extras.keyboardLayout || null,
+          wallpaper_url: null,
+          wifi: wizard.extras.wifiEnabled
+            ? {
+                ssid: wizard.extras.wifiSsid,
+                password: wizard.extras.wifiPassword,
+              }
+            : null,
+          windows_update: wizard.extras.windowsUpdatePolicy || 'auto',
+        },
       },
     };
 
-    return {
-      nome: wizard.meta.wizardName,
-      templateid: wizard.meta.templateId || null,
-      noteinterne: wizard.meta.internalNotes || null,
-      configurazione,
-    };
+    return payload;
   }
 
   async function handleGenerateWizard() {
     setGlobalError('');
 
     for (let i = 0; i < 7; i += 1) {
-      const v = validateStep(wizard, i);
-      if (!v.ok) {
-        setGlobalError(`Step ${i + 1}: ${v.message}`);
+      const validationResult = validateStep(wizard, i);
+
+      if (!validationResult.ok) {
+        setGlobalError(`Step ${i + 1}: ${validationResult.message}`);
         setCurrentStep(i);
         return;
       }
@@ -456,8 +518,15 @@ export default function WizardBuilderPage() {
 
     const formData = new FormData();
     formData.append('nome', payload.nome);
-    if (payload.templateid) formData.append('templateid', String(payload.templateid));
-    if (payload.noteinterne) formData.append('noteinterne', String(payload.noteinterne));
+
+    if (payload.template_id) {
+      formData.append('template_id', String(payload.template_id));
+    }
+
+    if (payload.note_interne) {
+      formData.append('note_interne', String(payload.note_interne));
+    }
+
     formData.append('configurazione', JSON.stringify(payload.configurazione));
 
     if (wizard.extras.wallpaperFile instanceof File) {

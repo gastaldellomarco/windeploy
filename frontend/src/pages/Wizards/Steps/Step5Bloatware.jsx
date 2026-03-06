@@ -1,33 +1,5 @@
 import React, { useMemo } from 'react';
-
-const BLOATWARE_LIST = [
-  'Microsoft.XboxApp',
-  'Microsoft.XboxGamingOverlay',
-  'Microsoft.XboxGameOverlay',
-  'Microsoft.XboxIdentityProvider',
-  'Microsoft.XboxSpeechToTextOverlay',
-  'king.com.CandyCrushSaga',
-  'king.com.CandyCrushFriends',
-  'MicrosoftTeams',
-  'Microsoft.OneDrive',
-  'Microsoft.SkypeApp',
-  'Microsoft.GetHelp',
-  'Microsoft.Getstarted',
-  'Microsoft.MicrosoftNews',
-  'Microsoft.BingNews',
-  'Microsoft.BingWeather',
-  'Microsoft.BingSports',
-  'Microsoft.BingFinance',
-  'Microsoft.WindowsFeedbackHub',
-  'Microsoft.MicrosoftSolitaireCollection',
-  'Microsoft.People',
-  'Microsoft.MicrosoftStickyNotes',
-  'Microsoft.YourPhone',
-  'Microsoft.ZuneMusic',
-  'Microsoft.ZuneVideo',
-  'Microsoft.Todos',
-  'Microsoft.Cortana',
-];
+import { BLOATWARE_LIST } from '../../../data/bloatware';
 
 export default function Step5Bloatware({ wizard, dispatch }) {
   const selected = useMemo(() => new Set(wizard.bloatware.preselected || []), [wizard.bloatware.preselected]);

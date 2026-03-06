@@ -1,4 +1,4 @@
-// Path: frontend/src/router/index.jsx
+// Path: src/router/index.jsx
 import React, { Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
@@ -10,13 +10,12 @@ import WizardErrorBoundary from "../components/ErrorBoundary/WizardErrorBoundary
 
 function PageLoader({ label }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-300">
       {label || "Caricamento..."}
     </div>
   );
 }
 
-// English comment: Lazy-load pages so a crash in one page does not bring down the whole app.
 const LoginPage = React.lazy(() => import("../pages/Login/LoginPage.jsx"));
 const DashboardPage = React.lazy(() => import("../pages/Dashboard/DashboardPage.jsx"));
 const WizardsListPage = React.lazy(() => import("../pages/Wizards/WizardsListPage.jsx"));
@@ -39,7 +38,6 @@ function wrapRoute(element, { resetKeys, fallbackLabel } = {}) {
 export default function AppRouter() {
   return (
     <Routes>
-      {/* Public */}
       <Route
         path="/login"
         element={wrapRoute(<LoginPage />, {
@@ -48,13 +46,10 @@ export default function AppRouter() {
         })}
       />
 
-      {/* Protected */}
       <Route element={<PrivateRoute allowedRoles={["admin", "tecnico", "viewer"]} />}>
         <Route element={<MainLayout />}>
-          {/* Redirect root -> /dashboard */}
           <Route index element={<Navigate to="/dashboard" replace />} />
 
-          {/* Dashboard & Reports */}
           <Route
             path="/dashboard"
             element={wrapRoute(<DashboardPage />, {
@@ -71,7 +66,6 @@ export default function AppRouter() {
             })}
           />
 
-          {/* Monitor avanzato per UN wizard specifico */}
           <Route
             path="/monitor/:id"
             element={wrapRoute(<MonitorPage />, {
@@ -80,7 +74,6 @@ export default function AppRouter() {
             })}
           />
 
-          {/* Wizards → tecnico + admin */}
           <Route element={<PrivateRoute allowedRoles={["admin", "tecnico"]} />}>
             <Route
               path="/wizards"
@@ -103,7 +96,6 @@ export default function AppRouter() {
               }
             />
 
-            {/* Templates → tecnico + admin */}
             <Route
               path="/templates"
               element={wrapRoute(<TemplatesPage />, {
@@ -113,7 +105,6 @@ export default function AppRouter() {
             />
           </Route>
 
-          {/* Admin only */}
           <Route element={<PrivateRoute allowedRoles={["admin"]} />}>
             <Route
               path="/software"
@@ -132,7 +123,6 @@ export default function AppRouter() {
             />
           </Route>
 
-          {/* 404 */}
           <Route
             path="*"
             element={wrapRoute(<NotFoundPage />, {

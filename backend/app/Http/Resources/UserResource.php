@@ -16,9 +16,13 @@ class UserResource extends JsonResource
     {
         return [
             'id'         => $this->id,
+            'name'       => $this->name ?? $this->nome,
             'nome'       => $this->nome,
             'email'      => $this->email,
+            // Provide both `ruolo` (DB enum) and `role` for compatibility
             'ruolo'      => $this->ruolo,
+            'role'       => $this->role ?? mb_strtolower((string) $this->ruolo),
+            'normalizedRole' => mb_strtolower((string) ($this->role ?? $this->ruolo ?? 'viewer')),
             'last_login' => $this->last_login?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
         ];

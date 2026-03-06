@@ -1,15 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
-
-import client from "../../api/client";
-import { useAuthStore } from "../../store/authStore";
+// frontend/src/pages/Login/LoginPage.jsx
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, Loader2, Lock, Mail } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
 
 function InputField({
   id,
   name,
   label,
-  type = "text",
+  type = 'text',
   placeholder,
   value,
   onChange,
@@ -17,27 +16,14 @@ function InputField({
   autoComplete,
   leftIcon: LeftIcon,
   rightSlot,
-  error,
 }) {
   return (
     <div className="space-y-1.5">
-      {label ? (
-        <label
-          htmlFor={id}
-          className="block text-sm font-medium text-slate-700"
-        >
-          {label}
-        </label>
-      ) : null}
+      <label htmlFor={id} className="block text-sm font-medium text-slate-700">
+        {label}
+      </label>
 
-      <div
-        className={[
-          "relative flex items-center rounded-xl border bg-white shadow-sm",
-          "transition focus-within:ring-2 focus-within:ring-sky-500/40",
-          error ? "border-red-300 focus-within:ring-red-500/30" : "border-slate-200",
-          disabled ? "opacity-60" : "",
-        ].join(" ")}
-      >
+      <div className="relative flex items-center rounded-xl border border-slate-200 bg-white shadow-sm transition focus-within:ring-2 focus-within:ring-sky-500/40">
         {LeftIcon ? (
           <div className="pointer-events-none absolute left-3 flex items-center">
             <LeftIcon className="h-5 w-5 text-slate-400" />
@@ -49,11 +35,10 @@ function InputField({
           name={name}
           type={type}
           className={[
-            "w-full rounded-xl bg-transparent px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400",
-            LeftIcon ? "pl-11" : "",
-            rightSlot ? "pr-11" : "",
-            "focus:outline-none",
-          ].join(" ")}
+            'w-full rounded-xl bg-transparent px-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none',
+            LeftIcon ? 'pl-11' : '',
+            rightSlot ? 'pr-11' : '',
+          ].join(' ')}
           placeholder={placeholder}
           value={value}
           onChange={onChange}
@@ -65,141 +50,107 @@ function InputField({
           <div className="absolute right-2 flex items-center">{rightSlot}</div>
         ) : null}
       </div>
-
-      {error ? (
-        <p className="text-sm text-red-600">{error}</p>
-      ) : null}
     </div>
   );
+}
+
+function flattenValidationErrors(errorsObject) {
+  if (!errorsObject || typeof errorsObject !== 'object') {
+    return 'Dati non validi';
+  }
+
+  const messages = Object.values(errorsObject)
+    .flat()
+    .filter(Boolean);
+
+  return messages.length > 0 ? messages.join(' ') : 'Dati non validi';
 }
 
 export default function LoginPage() {
   const navigate = useNavigate();
 
-  const { isAuthenticated, login } = useAuthStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const login = useAuthStore((state) => state.login);
 
-  const [isDark, setIsDark] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
-  const [form, setForm] = useState({ email: "", password: "" });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [form, setForm] = useState({
+    email: '',
+    password: '',
+  });
 
   const canSubmit = useMemo(() => {
-    return form.email.trim().length > 0 && form.password.trim().length > 0 && !isSubmitting;
-  }, [form.email, form.password, isSubmitting]);
+    return form.email.trim().length > 0 && form.password.trim().length > 0 && !isLoading;
+  }, [form.email, form.password, isLoading]);
 
   useEffect(() => {
-    if (isAuthenticated) navigate("/dashboard", { replace: true });
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
   }, [isAuthenticated, navigate]);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    if (isDark) root.classList.add("dark");
-    else root.classList.remove("dark");
-  }, [isDark]);
+  function handleChange(event) {
+    const { name, value } = event.target;
 
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-    if (errorMessage) setErrorMessage("");
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    if (errorMessage) {
+      setErrorMessage('');
+    }
   }
 
-  function mapLoginError(err) {
-    const status = err?.response?.status;
-    const data = err?.response?.data;
+  function mapLoginError(error) {
+    const status = error?.response?.status;
+    const responseData = error?.response?.data;
 
-    // Se il backend manda messaggi strutturati, prova a usarli senza assumere uno schema rigido.
-    const serverMessage =
-      (typeof data === "string" && data) ||
-      data?.message ||
-      data?.error ||
-      null;
+    if (status === 401) {
+      return 'Credenziali non valide';
+    }
 
-    if (status === 401) return "Credenziali non valide. Controlla email e password.";
-    if (status === 429) return "Troppi tentativi. Attendi qualche minuto e riprova.";
-    if (serverMessage) return serverMessage;
+    if (status === 422) {
+      return flattenValidationErrors(responseData?.errors);
+    }
 
-    return "Errore di rete o server non disponibile. Riprova.";
+    return 'Errore di rete, riprova';
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!canSubmit) return;
+  async function handleSubmit(event) {
+    event.preventDefault();
 
-    setIsSubmitting(true);
-    setErrorMessage("");
+    if (!canSubmit) {
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
 
     try {
-      const payload = { email: form.email.trim(), password: form.password };
-      const { data } = await client.post("/auth/login", payload);
-
-      // Atteso: { token, user: { id, nome, email, ruolo } }
-      if (!data?.token || !data?.user) {
-        throw new Error("Invalid login response shape");
-      }
-
-      login({ token: data.token, user: data.user });
-      navigate("/dashboard", { replace: true });
-    } catch (err) {
-      setErrorMessage(mapLoginError(err));
+      await login(form.email.trim(), form.password);
+      navigate('/dashboard', { replace: true });
+    } catch (error) {
+      setErrorMessage(mapLoginError(error));
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   }
 
   return (
-    <div
-      className={[
-        "min-h-screen w-full",
-        "bg-gradient-to-br from-[#1E3A5F] to-[#2E75B6]",
-        "flex items-center justify-center p-6",
-      ].join(" ")}
-    >
+    <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-[#1E3A5F] to-[#2E75B6] p-6">
       <div className="w-full max-w-md">
-        <div
-          className={[
-            "rounded-2xl bg-white shadow-2xl",
-            "border border-white/40",
-            "px-6 py-7 sm:px-8 sm:py-8",
-            "backdrop-blur",
-            // Dark mode “opzionale”: card leggermente scura, mantenendo il contrasto
-            "dark:bg-slate-900 dark:border-slate-800",
-          ].join(" ")}
-        >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-2xl font-semibold text-slate-900 dark:text-white">
-                ⚙️ WinDeploy
-              </div>
-              <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                IT Provisioning Platform
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setIsDark((v) => !v)}
-              className={[
-                "rounded-xl border px-3 py-2 text-xs font-medium",
-                "border-slate-200 text-slate-700 hover:bg-slate-50",
-                "dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800",
-              ].join(" ")}
-              aria-label="Toggle dark mode"
-            >
-              {isDark ? "Light" : "Dark"}
-            </button>
+        <div className="rounded-2xl border border-white/40 bg-white px-6 py-7 shadow-2xl backdrop-blur sm:px-8 sm:py-8">
+          <div>
+            <div className="text-2xl font-semibold text-slate-900">⚙️ WinDeploy</div>
+            <div className="mt-1 text-sm text-slate-600">IT Provisioning Platform</div>
           </div>
 
           <div className="mt-6">
             {errorMessage ? (
               <div
-                className={[
-                  "mb-4 rounded-xl border px-4 py-3 text-sm",
-                  "border-red-200 bg-red-50 text-red-700",
-                  "dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200",
-                ].join(" ")}
+                className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
                 role="alert"
               >
                 {errorMessage}
@@ -215,7 +166,7 @@ export default function LoginPage() {
                 placeholder="nome.cognome@azienda.it"
                 value={form.email}
                 onChange={handleChange}
-                disabled={isSubmitting}
+                disabled={isLoading}
                 autoComplete="email"
                 leftIcon={Mail}
               />
@@ -224,25 +175,20 @@ export default function LoginPage() {
                 id="password"
                 name="password"
                 label="Password"
-                type={showPassword ? "text" : "password"}
+                type={showPassword ? 'text' : 'password'}
                 placeholder="La tua password"
                 value={form.password}
                 onChange={handleChange}
-                disabled={isSubmitting}
+                disabled={isLoading}
                 autoComplete="current-password"
                 leftIcon={Lock}
                 rightSlot={
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className={[
-                      "inline-flex h-9 w-9 items-center justify-center rounded-lg",
-                      "text-slate-500 hover:bg-slate-100 hover:text-slate-700",
-                      "dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white",
-                      "transition",
-                    ].join(" ")}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    disabled={isSubmitting}
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                    aria-label={showPassword ? 'Nascondi password' : 'Mostra password'}
+                    disabled={isLoading}
                   >
                     {showPassword ? (
                       <EyeOff className="h-5 w-5" />
@@ -256,29 +202,18 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className={[
-                  "w-full rounded-xl px-4 py-2.5 text-sm font-semibold",
-                  "inline-flex items-center justify-center gap-2",
-                  "bg-sky-600 text-white hover:bg-sky-500",
-                  "disabled:opacity-60 disabled:cursor-not-allowed",
-                  "focus:outline-none focus:ring-2 focus:ring-sky-500/40",
-                  "transition",
-                ].join(" ")}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isSubmitting ? (
+                {isLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Accesso in corso...
                   </>
                 ) : (
-                  "Accedi"
+                  'Accedi'
                 )}
               </button>
             </form>
-
-            <div className="mt-5 text-xs text-slate-500 dark:text-slate-400">
-              Consiglio sicurezza: evita password riutilizzate e usa MFA dove possibile.
-            </div>
           </div>
         </div>
 

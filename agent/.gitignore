@@ -3,3 +3,43 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build artifacts (PyInstaller)
+build/
+dist/
+*.spec
+*.egg-info/
+
+# Logs and temp files
+*.log
+logs/
+tmp_*.py
+tmp_*.txt
+
+# Storage and runtime
+storage/backend_responses/
+__pycache__/
+.pytest_cache/
+
+# Config with secrets (environment-specific)
+.env
+.env.local
+config.local.py

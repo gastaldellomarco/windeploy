@@ -1,5 +1,6 @@
 # agent/config.py
 import os
+from pathlib import Path
 
 # --- API Configuration ---
 # Default to the backend virtual host used in the local development .env
@@ -30,6 +31,23 @@ COLORS = {
 }
 
 # --- Window Settings ---
-WINDOW_WIDTH = 900
-WINDOW_HEIGHT = 650
+WINDOW_WIDTH = 1000
+WINDOW_HEIGHT = 600
+
+# --- File System e Percorsi ---
+# Costante globale referenziata per i logger (fallback gestito in logger.py)
+LOG_DIR = Path(os.environ.get('PROGRAMDATA', 'C:\\ProgramData')) / 'WinDeploy' / 'logs'
+
+# --- Logging System Settings ---
+LOG_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+LOG_BACKUP_COUNT = 3
+
+# Regex per sanificazione dati su stringhe, dizionari e tuple di log
+# Copre sintassi JSON, sintassi kwargs, sintassi plain text
+LOG_SENSITIVE_PATTERNS = [
+    r'(?i)(password["\s:=]+)[^\s,}"\']+',
+    r'(?i)(passwd["\s:=]+)[^\s,}"\']+',
+    r'(?i)(secret["\s:=]+)[^\s,}"\']+',
+    r'(?i)(token["\s:=]+)[^\s,}"\']{20,}',
+]
 

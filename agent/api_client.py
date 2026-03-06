@@ -1,157 +1,175 @@
-"""agent/api_client.py
-Small class-based HTTP client for the agent UI.
-
-Provides a thin wrapper around requests so screens can delegate network
-calls and receive the raw Response object for status-code-level handling.
-"""
-from typing import Optional
-import requests
-import json
-import socket
+# agent/api_client.py
 import os
-import platform
-import shutil
+import logging
+import requests
+import time
+from datetime import datetime
 
-try:
-    import psutil
-except Exception:
-    psutil = None
-
-
-class APIClient:
-    """Minimal HTTP client used by the GUI.
-
-    Contract (authenticate_wizard):
-    - inputs: codicewizard (str), macaddress (str)
-    - output: requests.Response (raw response)
-    - errors: raises requests exceptions (ConnectionError, Timeout, etc.)
-    """
-
-    def __init__(self, base_url: Optional[str] = None, timeout: Optional[int] = None):
-        # Import config lazily to avoid circular import problems during module
-        # import time when UI modules import this client.
-        try:
-            from agent.config import API_URL as _API_URL, REQUESTS_TIMEOUT as _REQUESTS_TIMEOUT
-        except Exception:
-            _API_URL = None
-            _REQUESTS_TIMEOUT = None
-
-        self.base_url = base_url or _API_URL
-        self.timeout = timeout or _REQUESTS_TIMEOUT
+class ApiClient:
+    def __init__(self, base_url: str | None = None, jwt_token: str | None = None, wizard_code: str | None = None):
+        # Default to environment-configured API if not provided
+        self.base_url = (base_url or os.getenv('WINDEPLOY_API_URL') or 'http://windeploy.local.api').rstrip('/')
+        self.jwt_token = jwt_token or ''
+        self.wizard_code = wizard_code or ''
+        
         self.session = requests.Session()
-        # Always request JSON from the API endpoints to avoid HTML responses
-        self.session.headers.update({"Accept": "application/json"})
-        self.token = None
+        self.session.headers.update({
+            "Authorization": f"Bearer {self.jwt_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        })
+        # (connect_timeout, read_timeout)
+        self.timeout = (5, 30)
 
-    def set_token(self, token: str):
-        """Attach a Bearer token to be used for subsequent requests."""
-        self.token = token
-        self.session.headers.update({"Authorization": f"Bearer {token}"})
-
-    def send_step(self, execution_log_id: int, step_name: str, status: str, message: str = None) -> requests.Response:
-        """POST /agent/step to update execution progress.
-
-        Payload shape expected by backend:
-        {
-          "execution_log_id": <int>,
-          "step": { "name": <str>, "status": <str>, "message": <str> }
-        }
+    def send_step(self, wizard_code_or_log: str, step_name: str, status: str, message: str, progress: float) -> bool:
         """
+        Invia l'avanzamento al backend. Fire-and-forget: non solleva eccezioni.
+        """
+        # Sanitizzazione del progress per le validation rules del backend (0-100, int)
+        safe_progress = min(max(int(progress), 0), 100)
+        # Tronca il messaggio a 500 caratteri come da schema DB
+        safe_message = message[:500] if message else ""
+        
         payload = {
-            "execution_log_id": execution_log_id,
-            "step": {
-                "nome": step_name,
-                "status": status,
-                "message": message,
-            }
+            "wizard_code": wizard_code_or_log or self.wizard_code,
+            "step": step_name,
+            "status": status,
+            "message": safe_message,
+            "progress": safe_progress,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
         }
-        return self.session.post(f"{self.base_url}/agent/step", json=payload, timeout=self.timeout)
-
-    def _get_disk_gb(self):
-        try:
-            total, used, free = shutil.disk_usage('/')
-            return round(total / (1024 ** 3), 1)
-        except Exception:
-            return None
-
-    def _get_ram_gb(self):
-        try:
-            if psutil:
-                return round(psutil.virtual_memory().total / (1024 ** 3), 1)
-            # fallback: try to read from environment or return None
-            return None
-        except Exception:
-            return None
-
-    def _get_cpu_info(self):
-        try:
-            if psutil:
-                return psutil.cpu_count(logical=False) or psutil.cpu_count()
-            # fallback to platform processor info
-            return platform.processor() or None
-        except Exception:
-            return None
-
-    def start_execution(self, wizard_config: dict, token: Optional[str] = None) -> requests.Response:
-        """POST /agent/start including pc_info payload.
-
-        Builds a `pc_info` object with hostname, cpu, ram, disk, windowsversion.
-        Returns the raw requests.Response so caller can inspect status and body.
-        """
-        # Normalize types to what backend validation expects:
-        # - cpu: string
-        # - ram: integer (GB)
-        # - disco: integer (GB)
-        raw_cpu = self._get_cpu_info()
-        raw_ram = self._get_ram_gb()
-        raw_disco = self._get_disk_gb()
-
-        cpu = str(raw_cpu) if raw_cpu is not None else None
-        try:
-            ram = int(raw_ram) if raw_ram is not None else None
-        except Exception:
-            ram = None
-        try:
-            disco = int(raw_disco) if raw_disco is not None else None
-        except Exception:
-            disco = None
-
-        pc_info = {
-            "nome_originale": socket.gethostname() or os.environ.get("COMPUTERNAME", "PC-NON-SPECIFICATO"),
-            "cpu": cpu,
-            "ram": ram,
-            "disco": disco,
-            "windows_version": platform.release(),
-        }
-
-        # backend expects `pc_info` snake_case key
-        payload = {"pc_info": pc_info}
-
-        # Debug: print the payload that will be sent to /agent/start so we can
-        # verify the presence of pcinfo.nomeoriginale (helps debug 422 validation).
-        try:
-            print(f"POST /agent/start payload: {json.dumps(payload, ensure_ascii=False)}", flush=True)
-        except Exception:
-            # best-effort logging; don't fail the request if printing fails
+        
+        self._log_step_locally(step_name, status, safe_message)
+        
+        for attempt in range(2):
             try:
-                print("POST /agent/start payload: <unserializable payload>", flush=True)
-            except Exception:
-                pass
+                response = self.session.post(
+                    f"{self.base_url}/api/agent/step",
+                    json=payload,
+                    timeout=self.timeout
+                )
+                if response.status_code == 200:
+                    return True
+                else:
+                    logging.warning(f"Errore HTTP {response.status_code} in send_step: {response.text}")
+                    return False
+            except (requests.ConnectionError, requests.Timeout) as e:
+                logging.warning(f"Backend non raggiungibile in send_step (tentativo {attempt+1}/2): {e}")
+                if attempt == 0:
+                    time.sleep(2)  # Backoff prima del secondo tentativo
+        return False
 
-        if token:
-            self.set_token(token)
-
-        return self.session.post(f"{self.base_url}/agent/start", json=payload, timeout=self.timeout)
-
-    def authenticate_wizard(self, codicewizard: str, macaddress: str) -> requests.Response:
-        """POST /agent/auth with JSON payload and return the raw Response.
-
-        This method intentionally returns the raw requests.Response so the
-        caller can inspect status_code, headers and body as needed.
+    def send_complete(self, success: bool, steps_ok: int, steps_failed: int, report_path: str | None = None) -> bool:
         """
-        # The backend expects snake_case keys: codice_wizard and mac_address
-        payload = {
-            "codice_wizard": codicewizard,
-            "mac_address": macaddress,
-        }
-        return self.session.post(f"{self.base_url}/agent/auth", json=payload, timeout=self.timeout)
+        Segnala la fine dell'esecuzione chiudendo l'execution_log.
+        """
+        status = "completed" if success else "error"
+        result = self.send_step(
+            self.wizard_code,
+            "execution_complete",
+            status,
+            f"Esecuzione terminata. OK: {steps_ok}, Errori: {steps_failed}",
+            100
+        )
+        
+        # ⚠️ IMPLICAZIONE SICUREZZA:
+        # A fine operazione svuotiamo le variabili per impedire l'estrazione 
+        # del Bearer token tramite memory dumping (es. Mimikatz) a processo dormiente.
+        self.jwt_token = ""
+        self.wizard_code = ""
+        self.session.headers.pop("Authorization", None)
+        
+        return result
+
+    # Compatibility helpers used by GUI/test scripts
+    def set_token(self, token: str):
+        self.jwt_token = token
+        if token:
+            self.session.headers.update({"Authorization": f"Bearer {token}"})
+        else:
+            self.session.headers.pop("Authorization", None)
+
+    def authenticate_wizard(self, codice: str, mac: str | None = None):
+        """Authenticate using wizard code and MAC address. Returns requests.Response."""
+        # Backend expects snake_case keys: codice_wizard and mac_address
+        payload = {"codice_wizard": codice, "mac_address": mac}
+        return self.session.post(f"{self.base_url}/api/agent/auth", json=payload, timeout=self.timeout)
+
+    def start_execution(self, wizard_config: dict):
+        """Expects wizard_config serialized as JSON; wrapper for POST /agent/start"""
+        return self.session.post(f"{self.base_url}/api/agent/start", json=wizard_config, timeout=self.timeout)
+
+    def _log_step_locally(self, step_name: str, status: str, message: str):
+        """
+        Scrive il fallback locale in caso il server sia offline.
+        """
+        try:
+            appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+            log_dir = os.path.join(appdata, "WinDeploy", "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            log_file = os.path.join(log_dir, f"{date_str}.log")
+            
+            timestamp = datetime.now().isoformat()
+            log_line = f"[{timestamp}] [{status.upper()}] {step_name}: {message}\n"
+            
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(log_line)
+        except Exception as e:
+            logging.warning(f"Impossibile scrivere log locale: {e}")
+
+    def upload_log(self, log_path, wizard_code: str) -> bool:
+        """
+        Invia il file di log completo come multipart form-data al termine.
+        
+        Args:
+            log_path: Percorso del file log (str o Path)
+            wizard_code: Codice wizard per l'associazione nel backend
+            
+        Returns:
+            bool: True se upload riuscito, False altrimenti
+        """
+        from pathlib import Path
+
+        if not isinstance(log_path, Path):
+            log_path = Path(log_path)
+
+        if not log_path.exists():
+            logging.error(f"Impossibile caricare il log: {log_path} non esiste.")
+            return False
+
+        # Blocco sicurezza per payload massivi
+        file_size_mb = os.path.getsize(log_path) / (1024 * 1024)
+        if file_size_mb > 10.0:
+            logging.warning(f"Upload log ignorato: il file supera i 10MB ({file_size_mb:.1f} MB).")
+            return False
+
+        # TODO: implementare endpoint backend /api/agent/log-upload
+        # Vedi issue backend #XX — Upload log file da agent
+        logging.info("Upload log completato (STUB): endpoint multipart non ancora implementato su Laravel.")
+        return False
+        
+        # --- CODICE PRONTO PER QUANDO L'API SARÀ DISPONIBILE ---
+        # try:
+        #     with open(log_path, 'rb') as f:
+        #         files = {'log_file': (log_path.name, f, 'text/plain')}
+        #         data = {'wizard_code': wizard_code}
+        #         
+        #         # Utilizza timeout larghi in scrittura considerati limiti upload aziendali asimmetrici
+        #         response = self.session.post(
+        #             f'{self.base_url}/api/agent/log-upload',
+        #             files=files,
+        #             data=data,
+        #             timeout=(5, 60)
+        #         )
+        #         response.raise_for_status()
+        #         return True
+        # except Exception as e:
+        #     logging.error(f"Errore durante l'upload asincrono del log: {e}")
+        #     return False
+
+
+# Backwards-compatible alias: some modules import APIClient (all-caps).
+# Keep both names to avoid changing many imports across the codebase.
+APIClient = ApiClient

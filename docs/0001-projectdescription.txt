@@ -1,0 +1,160 @@
+# 🖥️ WinDeploy — Progetto Completo
+
+---
+
+## 📌 Panoramica
+
+WinDeploy è una piattaforma web che permette a tecnici IT di **automatizzare la configurazione di PC Windows aziendali** appena estratti dalla scatola. Dal browser si costruisce un "wizard" di configurazione, che viene poi eseguito sul PC nuovo tramite un piccolo `.exe` che gira in locale e comunica con il server. Al termine di ogni configurazione viene generato un report HTML completo, archiviato e consultabile in qualsiasi momento.
+
+---
+
+## 🏗️ Architettura generale
+
+Il sistema è composto da tre componenti che comunicano tra loro.
+
+**Web App** — l'interfaccia principale, accessibile da browser. Qui i tecnici si loggano, creano wizard, gestiscono template e consultano i report. Frontend in React, backend in PHP (Laravel), database MySQL.
+
+**Backend API** — il cuore del sistema. Espone endpoint REST che servono sia la web app che l'agent. Gestisce autenticazione, salvataggio wizard, ricezione log, generazione report. Gira sullo stesso server.
+
+**Agent Windows (.exe)** — un eseguibile leggero scritto in Python e compilato con PyInstaller. Viene copiato sul PC nuovo, si connette al backend, scarica le istruzioni del wizard e le esegue localmente tramite PowerShell, mostrando un'interfaccia grafica semplice e guidata.
+
+---
+
+## 🖥️ Infrastruttura server
+
+**Hardware/OS:** Ubuntu Server 24 LTS con Nginx.
+
+**Stack server:**
+
+Nginx fa da web server e reverse proxy. PHP-FPM gestisce l'esecuzione del backend Laravel. MySQL è il database, amministrato via phpMyAdmin. Certbot gestisce il certificato SSL (HTTPS obbligatorio, anche per sicurezza nella comunicazione con l'agent).
+
+**Struttura domini consigliata:**
+
+`windeploy.tuodominio.com` — la web app React + API Laravel. `windeploy.tuodominio.com/phpmyadmin` — accesso al database (protetto da autenticazione aggiuntiva). Opzionalmente un sottodominio `api.windeploy.tuodominio.com` separato per le API, se in futuro vuoi dividere frontend e backend.
+
+**Struttura cartelle sul server:**
+```
+/var/www/windeploy/
+├── frontend/          → build React (file statici serviti da Nginx)
+├── backend/           → progetto Laravel (API PHP)
+│   └── public/        → unico punto di ingresso esposto da Nginx
+└── agent/             → cartella pubblica con l'agent.exe scaricabile
+```
+
+---
+
+## 👥 Utenti e ruoli
+
+**Admin** — accesso completo. Gestisce account, libreria software globale, template aziendali, configurazioni di sistema, vede tutti i report di tutti i tecnici.
+
+**Tecnico** — può creare wizard, eseguire configurazioni, creare i propri template personali, vedere i propri report e quelli del team.
+
+**Viewer** — solo lettura. Vede dashboard e report ma non può creare né modificare nulla. Pensato per responsabili o clienti che vogliono monitorare.
+
+La registrazione non è aperta: solo un Admin può creare nuovi account. Ogni accesso è tracciato con IP e timestamp.
+
+---
+
+## 🗄️ Database MySQL — Struttura tabelle
+
+**users** — id, nome, email, password (hash bcrypt), ruolo (admin/tecnico/viewer), attivo (bool), created\_at, last\_login.
+
+**templates** — id, nome, descrizione, user\_id (chi l'ha creato), scope (globale/personale), configurazione JSON completa, created\_at, updated\_at.
+
+**wizards** — id, nome, user\_id (tecnico che l'ha creato), template\_id (opzionale, se parte da template), codice\_univoco (es. WD-7A3F), stato (bozza/pronto/in\_esecuzione/completato/errore), configurazione JSON completa, created\_at, expires\_at (il codice scade dopo X ore).
+
+**software\_library** — id, nome, versione, publisher, tipo (winget/exe/msi), identificatore (es. Google.Chrome per winget, oppure path file per custom), categoria, icona\_url, aggiunto\_da, attivo.
+
+**wizard\_software** — relazione molti-a-molti tra wizard e software\_library, con flag installa/disinstalla\_default.
+
+**execution\_logs** — id, wizard\_id, pc\_nome\_originale, pc\_nome\_nuovo, tecnico\_user\_id, step corrente, stato, log JSON (ogni azione con timestamp e esito), started\_at, completed\_at.
+
+**reports** — id, execution\_log\_id, html\_content (il report completo salvato), created\_at.
+
+---
+
+## 🌐 Web App React — Moduli e schermate
+
+**Login** — form email + password, gestione token JWT, redirect automatico alla dashboard. Pensato pulito e professionale, senza registrazione pubblica.
+
+**Dashboard** — panoramica: PC configurati questo mese, wizard attivi, ultimo report, attività recente del team. Grafici semplici (es. software più installati, tecnici più attivi).
+
+**Wizard Builder** — il modulo centrale, diviso in step con navigazione avanti/indietro:
+
+*Step 1 — Info base:* nome del wizard, eventuale selezione template di partenza, note interne.
+
+*Step 2 — Nome PC:* campo testo per il nome macchina da assegnare, con possibilità di usare variabili come `{reparto}-{numero}` e anteprima del risultato.
+
+*Step 3 — Utente admin locale:* nome utente, password (campo con toggle mostra/nascondi, mai salvata in chiaro nel DB), scelta se rimuovere l'account Microsoft iniziale di setup.
+
+*Step 4 — Software da installare:* lista della software\_library con ricerca e filtri per categoria. Il tecnico spunta quelli da installare. Ogni software mostra nome, versione, tipo (winget o custom).
+
+*Step 5 — Bloatware pre-selezionato:* lista di app Windows tipicamente indesiderate (Xbox, Candy Crush, Teams consumer, OneDrive, Cortana, ecc.) che il tecnico può marcare come "pre-spuntate" nella schermata di disinstallazione dell'agent. Non vengono rimosse automaticamente — l'utente sul PC nuovo potrà deselezionarle.
+
+*Step 6 — Power Plan:* scelta tra preset (Bilanciato, Prestazioni elevate, Risparmio energetico) oppure configurazione custom con impostazioni specifiche (timeout schermo, sospensione disco, frequenza CPU minima/massima).
+
+*Step 7 — Extra opzionali:* lingua/tastiera/timezone, wallpaper aziendale (upload immagine), configurazione rete Wi-Fi (SSID + password, cifrata), policy Windows Update (automatico, solo scarica, manuale).
+
+*Step 8 — Recap e genera:* riepilogo visuale di tutte le scelte fatte. Il tecnico rivede tutto, può tornare a qualsiasi step, poi clicca "Genera Wizard". Il sistema crea il codice univoco, salva tutto e mostra le istruzioni per distribuire l'agent.
+
+**Distribuzione wizard** — dopo la generazione, la web app mostra due opzioni: il codice univoco da digitare sull'agent, oppure un link diretto che pre-compila il codice in automatico. Mostra anche come scaricare/copiare l'agent.exe.
+
+**Monitor in tempo reale** — una schermata che si aggiorna in tempo reale (polling ogni 5 secondi o WebSocket) mostrando lo stato dell'esecuzione sul PC nuovo: step corrente, percentuale completamento, log delle ultime azioni. Utile per il tecnico che vuole supervisionare a distanza.
+
+**Template Manager** — lista dei template salvati (personali e globali), con possibilità di crearne di nuovi, duplicare, modificare, eliminare. I template globali sono modificabili solo dagli Admin.
+
+**Software Library** — gestione centralizzata del catalogo software. L'Admin aggiunge, modifica e disattiva software. Per ogni entry: nome, categoria, tipo di installazione (winget con identificatore, oppure file custom caricato sul server), versione, note.
+
+**Report e storico** — lista di tutte le configurazioni completate, filtrabili per data, tecnico, stato. Cliccando su una si apre il report HTML completo nel browser. Possibilità di scaricarlo come file.
+
+**Gestione utenti** (solo Admin) — lista utenti, creazione nuovo account, modifica ruolo, attivazione/disattivazione.
+
+---
+
+## ⚙️ Agent Windows (.exe)
+
+Scritto in Python, compilato con PyInstaller in un singolo `.exe` senza dipendenze. Interfaccia grafica con **Tkinter** (nativo Python, nessuna dipendenza esterna) o in alternativa **CustomTkinter** per un look più moderno. Esegue comandi di sistema tramite PowerShell richiamato via `subprocess`.
+
+**Flusso completo dell'agent:**
+
+**Schermata 1 — Connessione e codice wizard.** L'agent si avvia e mostra il logo WinDeploy, un campo per inserire il codice univoco (es. WD-7A3F) e un pulsante Connetti. Verifica la connessione internet, contatta il backend, scarica la configurazione del wizard. Se il codice non è valido o è scaduto, mostra un messaggio chiaro.
+
+**Schermata 2 — Riepilogo wizard.** Mostra all'utente cosa sta per fare: nome PC che verrà assegnato, software da installare, power plan, ecc. Pulsante Avvia per procedere.
+
+**Schermata 3 — Selezione app da disinstallare.** Questa schermata appare per prima tra le operazioni attive. L'agent esegue una scansione completa dei programmi installati (registro Windows + Store apps + Win32 programs) e mostra la lista completa con: nome app, versione, publisher. C'è una barra di ricerca e filtri (Tutte / App Store / Programmi classici). Le app marcate come bloatware nel wizard arrivano **già pre-spuntate**, ma l'utente può deselezionarle liberamente. Le app di sistema non disinstallabili sono escluse automaticamente. Pulsante Conferma selezione per procedere.
+
+**Schermata 4 — Conferma disinstallazione.** Mostra la lista finale delle app che verranno rimosse e chiede conferma esplicita. Pulsanti: Conferma e Torna indietro.
+
+**Schermata 5 — Esecuzione.** Progress bar generale e lista degli step con icone di stato (⏳ in attesa, 🔄 in corso, ✅ completato, ⚠️ avviso, ❌ errore). Gli step in ordine sono: disinstallazione app selezionate, rinomina PC, creazione utente admin, installazione software, applicazione power plan, impostazioni extra. Per ogni step viene mostrata l'azione corrente (es. "Installazione Google Chrome... ✅"). Se un'operazione fallisce, viene segnalata e si continua con le successive senza bloccare tutto. Ogni azione viene inviata in tempo reale al backend.
+
+**Schermata 6 — Completamento.** Schermata verde con riepilogo: operazioni riuscite, avvisi, errori. Pulsante per aprire il report HTML salvato sul desktop. Pulsante Chiudi. L'agent si auto-rimuove dalla cartella temporanea se configurato per farlo.
+
+---
+
+## 📄 Report HTML
+
+Il report è un file `.html` auto-contenuto (CSS inline, nessuna dipendenza esterna) generato sia dall'agent (salvato sul desktop del PC nuovo) che dal backend (archiviato nel database e consultabile dalla web app).
+
+Contiene: intestazione con logo WinDeploy, data e ora di esecuzione, nome del tecnico, nome wizard utilizzato. Sezione dati PC: nome originale → nome assegnato, specifiche hardware rilevate (CPU, RAM, disco, versione Windows). Sezione operazioni: per ogni step una riga con stato (✅/⚠️/❌), descrizione e timestamp. Sezione software installati: nome, versione installata, metodo. Sezione software rimossi: nome, versione, esito. Sezione power plan: impostazioni applicate. Eventuali errori o avvisi in evidenza. Footer con versione agent e codice wizard.
+
+---
+
+## 🔒 Sicurezza
+
+Tutto il traffico è HTTPS obbligatorio (Certbot su Nginx). Le password utente locali create nei wizard vengono cifrate con AES nel database e decifrate dall'agent solo al momento dell'uso, poi scartate. I token JWT hanno scadenza configurabile. I codici wizard scadono dopo un tempo impostabile (default 24 ore) e sono monouso: dopo l'esecuzione vengono invalidati. L'accesso a phpMyAdmin è ristretto per IP o protetto da autenticazione HTTP aggiuntiva a livello Nginx. I log non contengono mai password in chiaro.
+
+---
+
+## 🚀 Fasi di sviluppo consigliate
+
+**Fase 1 — MVP funzionante.** Backend PHP con autenticazione e CRUD wizard. Web app React con login, wizard builder base e generazione codice. Agent Python con flusso completo anche se interfaccia minimale. Report HTML base.
+
+**Fase 2 — Completamento funzionalità core.** Template manager, software library gestita dall'Admin, monitor in tempo reale, report archiviati e consultabili, schermata disinstallazione completa con ricerca e filtri.
+
+**Fase 3 — Rifinitura e UX.** Interfaccia agent più curata (CustomTkinter), dashboard con grafici, notifiche email al completamento, gestione errori robusta, documentazione interna.
+
+**Fase 4 — Espansione futura.** Portale self-service per utenti non tecnici, integrazione Active Directory, app mobile per monitoraggio, supporto multi-sede.
+
+---
+
+Siamo ora a un livello di dettaglio sufficiente per iniziare a costruire. Vuoi partire dalla **struttura del backend Laravel con le API**, dalla **web app React**, oppure dall'**agent Python**?

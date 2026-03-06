@@ -11,30 +11,60 @@ import useAuthStore from "../../store/authStore";
 function normalizeApiCollection(payload) {
   if (!payload) return [];
   if (Array.isArray(payload)) return payload;
-  if (payload.data && Array.isArray(payload.data)) return payload.data;
-  if (payload.data && payload.data.data && Array.isArray(payload.data.data)) return payload.data.data;
+  if (Array.isArray(payload.data)) return payload.data;
+  if (Array.isArray(payload.templates)) return payload.templates;
+  if (Array.isArray(payload.items)) return payload.items;
+  if (payload.data && Array.isArray(payload.data.data)) return payload.data.data;
   return [];
 }
 
-function safeString(v) {
-  return (v ?? "").toString();
+function parseConfig(raw) {
+  if (!raw) return null;
+  if (typeof raw === "object") return raw;
+
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function normalizeScope(value) {
+  const scope = String(value ?? "").trim().toLowerCase();
+
+  if (["globale", "global"].includes(scope)) return "globale";
+  if (["personale", "private", "mine", "user"].includes(scope)) return "personale";
+
+  return "personale";
 }
 
 function mapTemplateRow(item) {
   const t = item?.data ? item.data : item;
-  const config = t?.configurazione ?? t?.config ?? null;
+  const config = parseConfig(t?.configurazione ?? t?.config ?? t?.configuration);
 
   return {
     id: t?.id,
     name: t?.nome ?? t?.name ?? "",
     description: t?.descrizione ?? t?.description ?? "",
-    scope: (t?.scope ?? "personale").toString().toLowerCase(),
-    createdAt: t?.created_at ?? t?.createdAt ?? null,
-    updatedAt: t?.updated_at ?? t?.updatedAt ?? null,
-    userId: t?.user_id ?? t?.userid ?? null,
+    scope: normalizeScope(t?.scope),
+    createdAt: t?.created_at ?? t?.createdAt ?? t?.createdat ?? null,
+    updatedAt: t?.updated_at ?? t?.updatedAt ?? t?.updatedat ?? null,
+    userId: t?.user_id ?? t?.userId ?? t?.userid ?? null,
     config,
-    softwareCount: Array.isArray(config?.softwareinstalla) ? config.softwareinstalla.length : Array.isArray(config?.software) ? config.software.length : 0,
+    softwareCount: Array.isArray(config?.softwareinstalla)
+      ? config.softwareinstalla.length
+      : Array.isArray(config?.software)
+      ? config.software.length
+      : 0,
   };
+}
+
+function safeString(v) {
+  return (v ?? "").toString();
 }
 
 function scopeBadge(scope) {
@@ -85,7 +115,7 @@ function buildEmptyConfig() {
 
 export default function TemplatesPage() {
   const user = useAuthStore((s) => s.user);
-  const isAdmin = safeString(user?.role).toLowerCase() === "admin";
+  const isAdmin = safeString(user?.ruolo || user?.role).toLowerCase() === "admin";
 
   const [activeTab, setActiveTab] = useState("mine");
 

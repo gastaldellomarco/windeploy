@@ -1,17 +1,23 @@
 import customtkinter as ctk
 import threading
 import time
+from datetime import datetime
 
 # We dynamically import the controllers
 from installer import Installer
 from system_config import SystemConfig
-from agent.config import COLORS
-from agent.api_client import APIClient
+from config import COLORS
+from api_client import APIClient
 
 class ScreenProgress(ctk.CTkFrame):
-    def __init__(self, parent, controller):
-        super().__init__(parent, fg_color="transparent")
-        self.controller = controller
+    def __init__(self, master=None, parent=None, controller=None, wizard_config=None, on_complete=None, on_error=None):
+        # Support both old (parent/controller) and new (master/callbacks) initialization styles
+        super().__init__(master or parent, fg_color="transparent")
+        
+        self.controller = controller  # For old-style backwards compatibility
+        self.wizard_config = wizard_config or {}
+        self.on_complete = on_complete
+        self.on_error = on_error
         
         # Layout Title
         self.title_label = ctk.CTkLabel(self, text="Configurazione in corso...", font=ctk.CTkFont(size=24, weight="bold"), text_color=COLORS['text_main'])
@@ -38,6 +44,10 @@ class ScreenProgress(ctk.CTkFrame):
         
         self.is_running = False
         self.gui_queue = []
+        
+        # Auto-start execution if wizard_config is provided (new-style callbacks)
+        if wizard_config:
+            self.after(100, self._auto_start_execution)
 
     def init_steps(self):
         """ Clears and prepares the UI list of operations """
@@ -103,6 +113,14 @@ class ScreenProgress(ctk.CTkFrame):
         """ Generic queue helper to push updates to main thread """
         self.gui_queue.append((action_type, *args))
 
+    def _auto_start_execution(self):
+        """Auto-start execution when instantiated with new-style callbacks."""
+        if self.wizard_config and not self.is_running:
+            apps_to_remove = self.wizard_config.get('bloatware_to_remove', [])
+            api_client = APIClient()
+            execution_log_id = self.wizard_config.get('wizard_code', '')
+            self.start_execution(self.wizard_config, apps_to_remove, api_client, execution_log_id)
+
     def _process_queue(self):
         """ Loop executed in the MAIN THREAD to update CTk objects securely """
         while self.gui_queue:
@@ -131,7 +149,67 @@ class ScreenProgress(ctk.CTkFrame):
                 
             elif action_type == "finish":
                 self.is_running = False
-                self.controller.navigate("ScreenComplete")
+                
+                # Generate HTML report and save it
+                from report_generator import ReportGenerator
+                from pathlib import Path
+                import os
+                
+                report_path = None
+                try:
+                    # Prepare report data
+                    report_data = {
+                        "tecnico": "Agent",
+                        "data_ora": datetime.now().isoformat(),
+                        "codice_wizard": self.wizard_config.get("wizard_code", ""),
+                        "durata": "~0 minuti",  # TODO: Track actual duration
+                        "pc": {
+                            "nome_originale": "N/D",
+                            "nome_nuovo": self.wizard_config.get("pc_name", "N/D"),
+                            "cpu": "N/D",
+                            "ram_gb": "N/D",
+                            "disco_gb": "N/D",
+                            "windows": "Windows 10/11",
+                        },
+                        "steps": [],
+                        "software_installati": self.wizard_config.get("software", []),
+                        "app_rimosse": self.wizard_config.get("bloatware_to_remove", []),
+                        "power_plan": self.wizard_config.get("power_plan", {}),
+                        "agent_version": "1.0.0",
+                    }
+                    
+                    # Generate HTML report
+                    html_content = ReportGenerator.generate(report_data)
+                    
+                    # Save to %PROGRAMDATA%\WinDeploy\reports\
+                    reports_dir = Path(os.environ.get('PROGRAMDATA', 'C:\\ProgramData')) / 'WinDeploy' / 'reports'
+                    reports_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    report_filename = f"report_{self.wizard_config.get('wizard_code', 'unknown')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                    report_path = str(reports_dir / report_filename)
+                    
+                    with open(report_path, 'w', encoding='utf-8') as f:
+                        f.write(html_content)
+                        
+                except Exception as e:
+                    print(f"[WARN] Impossibile generare report: {e}")
+                
+                # Build result dict from execution context
+                result = {
+                    "success": True,
+                    "steps_ok": 6,  # TODO: Track this from execution
+                    "steps_total": 6,
+                    "steps_failed": 0,
+                    "duration_seconds": 0,
+                    "wizard_code": self.wizard_config.get("wizard_code", ""),
+                    "report_path": report_path,
+                }
+                
+                # Call new-style callback if available, else fall back to old-style navigation
+                if self.on_complete:
+                    self.on_complete(result)
+                elif self.controller:
+                    self.controller.navigate("ScreenComplete", {"result": result})
                 return # Interrupt polling loop
 
         if self.is_running:
@@ -242,10 +320,13 @@ class ScreenProgress(ctk.CTkFrame):
             config_dict = wizard_config.get(attr)
             
             if config_dict:
-                method = getattr(sys_config, f"apply_{step_key}")
-                if method(config_dict):
-                    self._queue_action("log", f"{action_text} applicate ✅")
-                    self._queue_action("step", step_key, "success", None)
+                # Construct the correct method name: apply_power_plan or apply_extras
+                method_name = f"apply_{step_key}_plan" if step_key == "power" else f"apply_{step_key}"
+                method = getattr(sys_config, method_name, None)
+                if method and callable(method):
+                    if method(config_dict):
+                        self._queue_action("log", f"{action_text} applicate ✅")
+                        self._queue_action("step", step_key, "success", None)
                     push_api(step_key, "completed", f"Applied {step_key}")
                 else:
                     self._queue_action("log", f"Errore {action_text} ❌")

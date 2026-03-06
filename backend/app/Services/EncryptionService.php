@@ -3,68 +3,85 @@
 namespace App\Services;
 
 use RuntimeException;
-
+/**
+ * Servizio di cifratura AES-256-GCM utilizzando APP_KEY come chiave.
+ * La chiave derivata è unica per installazione, la sicurezza risiede
+ * nella protezione dell'APP_KEY stessa.
+ */
 class EncryptionService
 {
-    private const CIPHER     = 'aes-256-gcm';
-    private const IV_LENGTH  = 12; // Recommended IV length for GCM
-    private const TAG_LENGTH = 16; // 128-bit authentication tag
+    private string $key;
+
+    public function __construct()
+    {
+        // Recupera e prepara la chiave da config('app.key')
+        $this->key = $this->prepareKey(config('app.key'));
+    }
 
     /**
-     * Encrypt a plaintext for a specific wizard context.
+     * Cifra un testo in chiaro usando AES-256-GCM.
      *
-     * $wizardSalt can be wizard ID, codice_univoco or another per-wizard unique value.
+     * Output: base64_encode(IV (12 byte) + tag (16 byte) + ciphertext)
+     *
+     * @param string $plaintext
+     * @return string
+     * @throws RuntimeException
      */
-    public function encryptForWizard(string $plaintext, string $wizardSalt): string
+    public function encrypt(string $plaintext): string
     {
-        $key = $this->deriveKey($wizardSalt);
-
-        $iv = random_bytes(self::IV_LENGTH);
-        $tag = '';
+        $iv = random_bytes(12); // 12 byte per GCM
+        $tag = ''; // verrà riempito da openssl_encrypt
 
         $ciphertext = openssl_encrypt(
             $plaintext,
-            self::CIPHER,
-            $key,
+            'aes-256-gcm',
+            $this->key,
             OPENSSL_RAW_DATA,
             $iv,
             $tag,
-            '',                 // no additional authenticated data
-            self::TAG_LENGTH
+            '',   // additional authenticated data (vuoto)
+            16    // tag length
         );
 
         if ($ciphertext === false) {
             throw new RuntimeException('Encryption failed.');
         }
 
-        // Pack iv | tag | ciphertext and base64 encode
-        return base64_encode($iv . $tag . $ciphertext);
+        // Concatena IV + tag + ciphertext e codifica in base64
+        $payload = $iv . $tag . $ciphertext;
+        return base64_encode($payload);
     }
 
     /**
-     * Decrypt a previously encrypted payload for a given wizard context.
+     * Decifra un payload prodotto da encrypt().
+     *
+     * @param string $payload base64 di iv+tag+ciphertext
+     * @return string
+     * @throws RuntimeException
      */
-    public function decryptForWizard(string $encrypted, string $wizardSalt): string
+    public function decrypt(string $payload): string
     {
-        $key = $this->deriveKey($wizardSalt);
-
-        $decoded = base64_decode($encrypted, true);
+        $decoded = base64_decode($payload, true);
         if ($decoded === false) {
             throw new RuntimeException('Invalid base64 payload.');
         }
 
-        if (strlen($decoded) <= (self::IV_LENGTH + self::TAG_LENGTH)) {
-            throw new RuntimeException('Invalid encrypted payload length.');
+        // Estrai IV (primi 12 byte), tag (successivi 16 byte) e ciphertext (resto)
+        $ivLength = 12;
+        $tagLength = 16;
+
+        if (strlen($decoded) < $ivLength + $tagLength) {
+            throw new RuntimeException('Payload too short.');
         }
 
-        $iv         = substr($decoded, 0, self::IV_LENGTH);
-        $tag        = substr($decoded, self::IV_LENGTH, self::TAG_LENGTH);
-        $ciphertext = substr($decoded, self::IV_LENGTH + self::TAG_LENGTH);
+        $iv = substr($decoded, 0, $ivLength);
+        $tag = substr($decoded, $ivLength, $tagLength);
+        $ciphertext = substr($decoded, $ivLength + $tagLength);
 
         $plaintext = openssl_decrypt(
             $ciphertext,
-            self::CIPHER,
-            $key,
+            'aes-256-gcm',
+            $this->key,
             OPENSSL_RAW_DATA,
             $iv,
             $tag
@@ -78,26 +95,32 @@ class EncryptionService
     }
 
     /**
-     * Derive a 256-bit key from APP_KEY and per-wizard salt.
+     * Prepara la chiave partendo dal valore di config('app.key').
+     * La chiave può essere in formato "base64:..." oppure una stringa già binaria.
+     *
+     * @param string $appKey
+     * @return string (binary key)
+     * @throws RuntimeException
      */
-    private function deriveKey(string $wizardSalt): string
+    private function prepareKey(string $appKey): string
     {
-        $appKey = config('app.key');
-
-        if (! $appKey) {
-            throw new RuntimeException('Application key is not configured.');
-        }
-
-        // Laravel APP_KEY is usually base64:...; decode if needed.[file:5]
+        // Se la chiave è prefissata con "base64:", la decodifichiamo
         if (str_starts_with($appKey, 'base64:')) {
             $decoded = base64_decode(substr($appKey, 7), true);
             if ($decoded === false) {
                 throw new RuntimeException('Invalid base64 APP_KEY.');
             }
-            $appKey = $decoded;
+            return $decoded;
         }
 
-        // Derive 32-byte key with SHA-256
-        return hash('sha256', $appKey . '|' . $wizardSalt, true);
+        // Altrimenti assumiamo sia già una chiave binaria a 32 byte?
+        // In realtà Laravel di solito usa prefisso, ma gestiamo comunque.
+        // Se è una stringa esadecimale, la convertiamo.
+        if (strlen($appKey) === 64 && ctype_xdigit($appKey)) {
+            return hex2bin($appKey);
+        }
+
+        // Fallback: usa direttamente la stringa (dovrebbe già essere binaria)
+        return $appKey;
     }
 }

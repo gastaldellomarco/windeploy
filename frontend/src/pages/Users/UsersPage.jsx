@@ -1,3 +1,4 @@
+// Path: src/pages/Users/UsersPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Trash2, KeyRound, Save, X, AlertTriangle } from "lucide-react";
 import toast from "react-hot-toast";
@@ -30,12 +31,13 @@ function roleTone(role) {
 
 function mapUserRow(item) {
   const u = item?.data ? item.data : item;
+
   return {
     id: u?.id,
     name: u?.nome ?? u?.name ?? "",
     email: u?.email ?? "",
-    role: (u?.ruolo ?? u?.role ?? "viewer").toString().toLowerCase(),
-    lastLogin: u?.last_login ?? u?.lastLogin ?? null,
+    role: safeString(u?.ruolo ?? u?.role ?? "viewer").toLowerCase(),
+    lastLogin: u?.last_login ?? u?.lastLogin ?? u?.lastlogin ?? null,
     lastLoginIp: u?.last_login_ip ?? u?.lastLoginIp ?? u?.lastloginip ?? null,
     active: Boolean(u?.attivo ?? u?.active ?? true),
   };
@@ -58,34 +60,62 @@ function InlineSelect({ value, onChange, disabled }) {
 
 function validateNewUserForm(form) {
   const errors = {};
+
   if (!safeString(form.name).trim()) errors.name = "Nome obbligatorio.";
   if (!safeString(form.email).trim()) errors.email = "Email obbligatoria.";
   if (!safeString(form.email).includes("@")) errors.email = "Email non valida.";
-  if (!["admin", "tecnico", "viewer"].includes(safeString(form.role).toLowerCase())) errors.role = "Ruolo non valido.";
-  if (!safeString(form.tempPassword).trim() || safeString(form.tempPassword).trim().length < 8) errors.tempPassword = "Password temporanea min 8 caratteri.";
+  if (!["admin", "tecnico", "viewer"].includes(safeString(form.role).toLowerCase())) {
+    errors.role = "Ruolo non valido.";
+  }
+  if (!safeString(form.tempPassword).trim() || safeString(form.tempPassword).trim().length < 8) {
+    errors.tempPassword = "Password temporanea min 8 caratteri.";
+  }
+
   return errors;
 }
 
 export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
   const [users, setUsers] = useState([]);
 
   const [createModal, setCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: "", email: "", role: "tecnico", tempPassword: "" });
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    email: "",
+    role: "tecnico",
+    tempPassword: "",
+  });
   const [createErrors, setCreateErrors] = useState({});
 
-  const [editState, setEditState] = useState({ editingId: null, draftRole: "viewer", saving: false });
+  const [editState, setEditState] = useState({
+    editingId: null,
+    draftRole: "viewer",
+    saving: false,
+  });
 
-  const [confirmToggle, setConfirmToggle] = useState({ open: false, row: null, nextValue: false });
-  const [confirmDelete, setConfirmDelete] = useState({ open: false, row: null });
+  const [confirmToggle, setConfirmToggle] = useState({
+    open: false,
+    row: null,
+    nextValue: false,
+  });
 
-  const [resetModal, setResetModal] = useState({ open: false, user: null, loading: false, tempPassword: "" });
+  const [confirmDelete, setConfirmDelete] = useState({
+    open: false,
+    row: null,
+  });
+
+  const [resetModal, setResetModal] = useState({
+    open: false,
+    user: null,
+    loading: false,
+    tempPassword: "",
+  });
 
   async function fetchUsers() {
     setLoading(true);
     setError("");
+
     try {
       const res = await client.get("/users");
       const list = normalizeApiCollection(res?.data).map(mapUserRow);
@@ -106,12 +136,14 @@ export default function UsersPage() {
   async function createUser() {
     const errors = validateNewUserForm(createForm);
     setCreateErrors(errors);
+
     if (Object.keys(errors).length > 0) {
       toast.error("Controlla i campi del form.");
       return;
     }
 
     const t = toast.loading("Creazione utente...");
+
     try {
       const payload = {
         nome: safeString(createForm.name).trim(),
@@ -121,6 +153,7 @@ export default function UsersPage() {
       };
 
       const res = await client.post("/users", payload);
+
       toast.dismiss(t);
       toast.success("Utente creato.");
 
@@ -148,11 +181,15 @@ export default function UsersPage() {
     const userId = editState.editingId;
     if (!userId) return;
 
-    setEditState((p) => ({ ...p, saving: true }));
+    setEditState((prev) => ({ ...prev, saving: true }));
 
     const t = toast.loading("Aggiornamento ruolo...");
+
     try {
-      await client.put(`/users/${userId}`, { ruolo: safeString(editState.draftRole).toLowerCase() });
+      await client.put(`/users/${userId}`, {
+        ruolo: safeString(editState.draftRole).toLowerCase(),
+      });
+
       toast.dismiss(t);
       toast.success("Ruolo aggiornato.");
       cancelRoleEdit();
@@ -160,7 +197,7 @@ export default function UsersPage() {
     } catch (err) {
       toast.dismiss(t);
       toast.error(safeString(err?.response?.data?.message || err?.message || "Errore aggiornamento ruolo."));
-      setEditState((p) => ({ ...p, saving: false }));
+      setEditState((prev) => ({ ...prev, saving: false }));
     }
   }
 
@@ -173,8 +210,12 @@ export default function UsersPage() {
     if (!row?.id) return;
 
     const t = toast.loading("Aggiornamento stato account...");
+
     try {
-      await client.put(`/users/${row.id}`, { attivo: Boolean(confirmToggle.nextValue) });
+      await client.put(`/users/${row.id}`, {
+        attivo: Boolean(confirmToggle.nextValue),
+      });
+
       toast.dismiss(t);
       toast.success("Stato account aggiornato.");
       setConfirmToggle({ open: false, row: null, nextValue: false });
@@ -190,6 +231,7 @@ export default function UsersPage() {
     if (!row?.id) return;
 
     const t = toast.loading("Eliminazione utente...");
+
     try {
       await client.delete(`/users/${row.id}`);
       toast.dismiss(t);
@@ -207,10 +249,18 @@ export default function UsersPage() {
     const t = toast.loading("Reset password...");
 
     try {
-      // Assunzione: endpoint PUT /api/users/:id con action reset_password, oppure endpoint dedicato.
-      // Se nel backend non esiste ancora, aggiungilo: deve restituire la password temporanea UNA volta. [file:17]
-      const res = await client.put(`/users/${userRow.id}`, { action: "reset_password" });
-      const tempPassword = safeString(res?.data?.password_temporanea || res?.data?.tempPassword || res?.data?.password || "");
+      const res = await client.put(`/users/${userRow.id}`, {
+        action: "reset_password",
+      });
+
+      const tempPassword = safeString(
+        res?.data?.password_temporanea ??
+          res?.data?.passwordTemporanea ??
+          res?.data?.tempPassword ??
+          res?.data?.password ??
+          ""
+      );
+
       toast.dismiss(t);
 
       if (!tempPassword) {
@@ -233,7 +283,9 @@ export default function UsersPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-100">Gestione utenti</h1>
-          <p className="mt-1 text-sm text-slate-400">Creazione account, ruoli, attivazione/disattivazione e reset password (solo admin).</p>
+          <p className="mt-1 text-sm text-slate-400">
+            Creazione account, ruoli, attivazione/disattivazione e reset password solo admin.
+          </p>
           <div className="mt-2 text-xs text-slate-400">
             Attivi: <span className="font-mono text-slate-200">{activeCount}</span> /{" "}
             <span className="font-mono text-slate-200">{users.length}</span>
@@ -262,11 +314,15 @@ export default function UsersPage() {
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/30 overflow-hidden">
-        <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold text-slate-200">Elenco utenti</div>
+        <div className="border-b border-slate-800 px-4 py-3 text-sm font-semibold text-slate-200">
+          Elenco utenti
+        </div>
 
         {loading ? <div className="p-4 text-sm text-slate-400">Caricamento...</div> : null}
         {error ? <div className="p-4 text-sm text-rose-300">Errore: {error}</div> : null}
-        {!loading && !error && users.length === 0 ? <div className="p-4 text-sm text-slate-400">Nessun utente.</div> : null}
+        {!loading && !error && users.length === 0 ? (
+          <div className="p-4 text-sm text-slate-400">Nessun utente.</div>
+        ) : null}
 
         {!loading && !error && users.length > 0 ? (
           <div className="overflow-x-auto">
@@ -286,6 +342,7 @@ export default function UsersPage() {
               <tbody className="divide-y divide-slate-800">
                 {users.map((u) => {
                   const isEditing = editState.editingId === u.id;
+
                   return (
                     <tr key={u.id} className="align-top">
                       <td className="px-4 py-3 font-medium text-slate-100">{u.name}</td>
@@ -296,8 +353,9 @@ export default function UsersPage() {
                             <InlineSelect
                               value={editState.draftRole}
                               disabled={editState.saving}
-                              onChange={(v) => setEditState((p) => ({ ...p, draftRole: v }))}
+                              onChange={(value) => setEditState((prev) => ({ ...prev, draftRole: value }))}
                             />
+
                             <button
                               type="button"
                               onClick={cancelRoleEdit}
@@ -307,6 +365,7 @@ export default function UsersPage() {
                             >
                               <X className="h-4 w-4" />
                             </button>
+
                             <button
                               type="button"
                               onClick={saveRoleEdit}
@@ -329,11 +388,13 @@ export default function UsersPage() {
                           </button>
                         )}
                       </td>
+
                       <td className="px-4 py-3 text-slate-300">{formatDateTime(u.lastLogin) || "-"}</td>
                       <td className="px-4 py-3 font-mono text-slate-200">{u.lastLoginIp || "-"}</td>
                       <td className="px-4 py-3">
                         <ToggleSwitch checked={u.active} onChange={(next) => requestToggle(u, next)} />
                       </td>
+
                       <td className="px-4 py-3 text-right">
                         <div className="inline-flex items-center gap-2">
                           <button
@@ -365,8 +426,8 @@ export default function UsersPage() {
               <div className="flex items-start gap-2">
                 <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-200" />
                 <div>
-                  Sicurezza: il reset password deve restituire la password temporanea **una sola volta** e non loggarla mai lato server.
-                  Valuta rate-limit e audit trail (chi ha resettato cosa e quando).  
+                  Sicurezza: il reset password deve restituire la password temporanea una sola volta e non loggarla
+                  mai lato server. Valuta rate-limit e audit trail.
                 </div>
               </div>
             </div>
@@ -408,7 +469,7 @@ export default function UsersPage() {
               id="uName"
               type="text"
               value={createForm.name}
-              onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
               className="mt-2 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
               placeholder="Es. Mario Rossi"
             />
@@ -423,7 +484,7 @@ export default function UsersPage() {
               id="uEmail"
               type="email"
               value={createForm.email}
-              onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
               className="mt-2 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
               placeholder="nome.cognome@azienda.it"
             />
@@ -437,7 +498,7 @@ export default function UsersPage() {
             <select
               id="uRole"
               value={createForm.role}
-              onChange={(e) => setCreateForm((p) => ({ ...p, role: e.target.value }))}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, role: e.target.value }))}
               className="mt-2 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
             >
               <option value="admin">Admin</option>
@@ -455,13 +516,15 @@ export default function UsersPage() {
               id="uTempPw"
               type="text"
               value={createForm.tempPassword}
-              onChange={(e) => setCreateForm((p) => ({ ...p, tempPassword: e.target.value }))}
+              onChange={(e) => setCreateForm((prev) => ({ ...prev, tempPassword: e.target.value }))}
               className="mt-2 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm font-mono text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
               placeholder="Genera una password temporanea"
             />
-            {createErrors.tempPassword ? <div className="mt-2 text-xs text-rose-300">{createErrors.tempPassword}</div> : null}
+            {createErrors.tempPassword ? (
+              <div className="mt-2 text-xs text-rose-300">{createErrors.tempPassword}</div>
+            ) : null}
             <div className="mt-2 text-xs text-slate-500">
-              Consiglio: usa una password random lunga e comunica il cambio al primo accesso (policy server-side).
+              Consiglio: usa una password random lunga e imponi cambio password al primo accesso lato server.
             </div>
           </div>
         </div>
@@ -502,6 +565,7 @@ export default function UsersPage() {
             >
               Chiudi
             </button>
+
             {resetModal.tempPassword ? (
               <button
                 type="button"
@@ -524,6 +588,7 @@ export default function UsersPage() {
             <div className="text-sm text-slate-300">
               Utente: <span className="font-semibold text-slate-100">{resetModal.user?.name}</span>
             </div>
+
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
               <div className="text-xs font-medium text-emerald-200">Password temporanea</div>
               <div className="mt-2 font-mono text-lg text-emerald-100">{resetModal.tempPassword}</div>

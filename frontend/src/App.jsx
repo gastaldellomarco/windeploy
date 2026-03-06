@@ -1,19 +1,26 @@
-// Path: frontend/src/App.jsx
-import React from "react";
-import { Toaster } from "react-hot-toast";
-import AppRouter from "./router/index.jsx";
+// frontend/src/App.jsx
+import React, { useEffect } from 'react';
+import AppRouter from './router';
+import { useAuthStore } from './store/authStore';
 
-export default function App() {
+function App() {
+  const token = useAuthStore((state) => state.token);
+  const user = useAuthStore((state) => state.user);
+  const checkAuth = useAuthStore((state) => state.checkAuth);
+
+  useEffect(() => {
+    if (token && !user) {
+      checkAuth().catch(() => {
+        // Session cleanup already handled by store/interceptors.
+      });
+    }
+  }, [token, user, checkAuth]);
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#F0F4F8" }}>
+    <div className="min-h-screen bg-slate-950 text-slate-50">
       <AppRouter />
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          duration: 4000,
-          
-        }}
-      />
     </div>
   );
 }
+
+export default App;

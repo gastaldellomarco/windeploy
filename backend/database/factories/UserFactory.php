@@ -24,10 +24,12 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => fake()->name(),
+            'nome' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'ruolo' => 'tecnico',
+            'attivo' => true,
             'remember_token' => Str::random(10),
         ];
     }
@@ -39,6 +41,26 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
+        ]);
+    }
+
+    /**
+     * Indicate that the user should have admin role.
+     */
+    public function admin(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'ruolo' => 'admin',
+        ]);
+    }
+
+    /**
+     * Indicate that the user should be inactive.
+     */
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'attivo' => false,
         ]);
     }
 }

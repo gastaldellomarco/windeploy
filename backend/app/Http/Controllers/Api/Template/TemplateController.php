@@ -38,10 +38,19 @@ class TemplateController extends Controller
 
         $globalTemplates = $globalQuery->latest()->get();
         $personalTemplates = $personalQuery->latest()->get();
+        $globalResources = TemplateResource::collection($globalTemplates);
+        $personalResources = TemplateResource::collection($personalTemplates);
+
+        // Provide both separated lists and a flat `data` array for legacy clients
+        $dataFlat = array_merge(
+            $globalResources->toArray(request()),
+            $personalResources->toArray(request())
+        );
 
         return response()->json([
-            'global'   => TemplateResource::collection($globalTemplates),
-            'personal' => TemplateResource::collection($personalTemplates),
+            'global'   => $globalResources,
+            'personal' => $personalResources,
+            'data'     => $dataFlat,
         ]);
     }
 
