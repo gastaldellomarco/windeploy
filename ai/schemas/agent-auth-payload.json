@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AgentAuthPayload",
+  "description": "Payload per autenticazione JWT monouso dell'agent WinDeploy verso il backend Laravel.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["agent_code", "agent_version", "pc_name"],
+  "properties": {
+    "agent_code": {
+      "type": "string",
+      "description": "Codice di autenticazione monouso pre-generato dal backend per questo agent",
+      "minLength": 16,
+      "example": "AGT-20240115-XKQP"
+    },
+    "agent_version": {
+      "type": "string",
+      "description": "Versione dell'agent .exe che si sta autenticando",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "example": "1.0.0"
+    },
+    "pc_name": {
+      "type": "string",
+      "description": "Hostname del PC su cui gira l'agent",
+      "maxLength": 255,
+      "example": "WORKSTATION-01"
+    },
+    "pc_username": {
+      "type": "string",
+      "description": "Username Windows corrente",
+      "maxLength": 100,
+      "example": "marco"
+    }
+  },
+  "response": {
+    "description": "Risposta del backend all'autenticazione",
+    "type": "object",
+    "properties": {
+      "token": {
+        "type": "string",
+        "description": "JWT monouso da usare per tutte le richieste successive dell'agent"
+      },
+      "expires_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "wizard_code": {
+        "type": "string",
+        "description": "Codice del wizard assegnato a questo agent"
+      },
+      "backend_version": {
+        "type": "string",
+        "description": "Versione del backend per compatibilità check"
+      },
+      "compatible": {
+        "type": "boolean",
+        "description": "Se l'agent version è compatibile con questa versione backend"
+      }
+    }
+  }
+}

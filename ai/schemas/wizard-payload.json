@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WizardPayload",
+  "description": "Contratto dati per la creazione e trasmissione di un wizard WinDeploy tra backend, frontend e agent.",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["wizard_code", "pc_name", "steps", "is_active"],
+  "properties": {
+    "wizard_code": {
+      "type": "string",
+      "description": "Codice univoco del wizard. Formato: WZ-XXXXXXXX (8 caratteri alfanumerici maiuscoli)",
+      "pattern": "^WZ-[A-Z0-9]{8}$",
+      "example": "WZ-A1B2C3D4"
+    },
+    "pc_name": {
+      "type": "string",
+      "description": "Nome del PC target (hostname Windows)",
+      "maxLength": 255,
+      "example": "WORKSTATION-01"
+    },
+    "admin_user": {
+      "type": "string",
+      "description": "Username amministratore locale del PC target",
+      "maxLength": 100,
+      "example": "marco"
+    },
+    "steps": {
+      "type": "array",
+      "description": "Lista ordinata dei passi di configurazione/installazione",
+      "items": {
+        "type": "object",
+        "required": ["step_order", "step_type", "step_config"],
+        "properties": {
+          "step_order": { "type": "integer", "minimum": 1 },
+          "step_type": {
+            "type": "string",
+            "enum": ["software_install", "software_uninstall", "registry_edit", "file_copy", "script_run", "system_config"]
+          },
+          "step_config": {
+            "type": "object",
+            "description": "Configurazione specifica del passo (varia per step_type)"
+          },
+          "is_optional": { "type": "boolean", "default": false },
+          "on_failure": {
+            "type": "string",
+            "enum": ["abort", "skip", "warn"],
+            "default": "abort"
+          }
+        }
+      }
+    },
+    "software_install": {
+      "type": "array",
+      "description": "Lista dei software da installare tramite winget (codici winget ID)",
+      "items": { "type": "string" },
+      "example": ["7zip.7zip", "Microsoft.VisualStudioCode"]
+    },
+    "is_active": {
+      "type": "boolean",
+      "description": "Se il wizard è attivo e disponibile per l'esecuzione"
+    },
+    "agent_version_required": {
+      "type": "string",
+      "description": "Versione minima dell'agent richiesta per eseguire questo wizard",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "example": "1.0.0"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp ISO 8601 UTC di creazione",
+      "example": "2024-01-15T10:30:00Z"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp ISO 8601 UTC di ultima modifica",
+      "example": "2024-01-20T14:45:00Z"
+    }
+  }
+}

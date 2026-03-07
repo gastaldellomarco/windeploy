@@ -1,152 +1,164 @@
-# =============================================
-# Environment & Secrets (CRITICAL — NEVER PUSH)
-# =============================================
-.env
-.env.backup
-.env.production
-.env.local
-.env.*.local
-config.local.py
-auth.json
+# ============================================================
+# WinDeploy — .gitignore Monorepo
+# Stack: Laravel 11 + React 18/Vite + Python 3.11 Agent
+# ============================================================
 
-# =============================================
-# IDE & Editor
-# =============================================
-.vscode/
-.idea/
-*.swp
-*.swo
-*.sublime-*
-*.sublime-project
-*.sublime-workspace
-.DS_Store
-.AppleDouble
-.LSOverride
+# ============================================================
+# LARAVEL / PHP (backend/)
+# ============================================================
+backend/vendor/
+backend/.env
+backend/.env.backup
+backend/.env.production
+backend/storage/logs/
+backend/storage/framework/cache/
+backend/storage/framework/sessions/
+backend/storage/framework/views/
+backend/bootstrap/cache/
+backend/public/hot
+backend/public/storage
+backend/.phpunit.result.cache
+backend/.phpunit.cache/
+backend/node_modules/
 
-# =============================================
-# OS
-# =============================================
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-*.lnk
+# ============================================================
+# REACT / VITE (frontend/)
+# ============================================================
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.production.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.vite/
+frontend/coverage/
 
-# =============================================
-# Build & Dependencies (Re-install via npm/composer/pip)
-# =============================================
-node_modules/
-vendor/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-build/
-dist/
-*.egg-info/
-.eggs/
-.venv
-venv/
-env/
-ENV/
+# ============================================================
+# PYTHON AGENT (agent/)
+# ============================================================
+agent/venv/
+agent/.venv/
+agent/__pycache__/
+agent/src/__pycache__/
+agent/**/__pycache__/
+agent/*.pyc
+agent/**/*.pyc
+agent/dist/
+agent/build/
+agent/*.exe
+agent/*.spec
+agent/.pytest_cache/
+agent/htmlcov/
+agent/.coverage
 
-# =============================================
-# Build Artifacts
-# =============================================
-*.phar
-*.zip
-*.tar.gz
-*.rar
-*.exe (conditional — only excludes build artifacts)
-
-# =============================================
-# Logs & Temporary Files
-# =============================================
-*.log
-logs/
-tmp_*.php
-tmp_*.py
-tmp_*.sql
-tmp_*.txt
-*.swp
-*.swo
-
-# =============================================
-# Cache
-# =============================================
-.phpunit.cache/
-.pytest_cache/
-.eslintcache
-.next/
-out/
-coverage/
-
-# =============================================
-# Laravel Specific
-# =============================================
-/backend/storage/logs/
-/backend/storage/debugbar/
-/backend/bootstrap/cache/*.php
-/backend/.phpunit.result.cache
-
-# =============================================
-# Development Scripts
-# =============================================
-scripts/dev/
-scripts/local/
-
-# =============================================
-# Windows PowerShell (local dev only)
-# =============================================
-*.ps1
-
-# =============================================
+# ============================================================
+# SISTEMA OPERATIVO
+# ============================================================
 # macOS
-# =============================================
 .DS_Store
-.AppleDouble
-.LSOverride
+.DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
 ehthumbs.db
 
-# =============================================
-# IDE specific
-# =============================================
-*.sublime-workspace
-*.sublime-project
-*.project
-*.pydevproject
-.project
-.settings/
-.classpath
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
 
-# =============================================
-# Node.js
-# =============================================
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+
+# ============================================================
+# EDITOR / IDE
+# ============================================================
+# JetBrains (PhpStorm, PyCharm, WebStorm)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+\#*\#
+.emacs.desktop
+
+# ============================================================
+# DEBUG E FILE TEMPORANEI
+# ============================================================
+tmp_*.php
+tmp_*.js
+tmp_*.py
+*.log
+*.bak
+*.tmp
+*.orig
+*.rej
+*.patch
+
+# File debug WinDeploy (vedi security/backend issue)
+debug_*.php
+test_*.php
+*_debug.php
+*_test_manual.php
+
+# ============================================================
+# CERTIFICATI E SECRETS
+# ============================================================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.env*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+!agent/.env.example
+
+# ============================================================
+# DOCKER (se introdotto in futuro)
+# ============================================================
+docker-compose.override.yml
+.docker/
+
+# ============================================================
+# AI WORKSPACE (non deployato)
+# ============================================================
+# NOTA: ai/ è INCLUSO nel repo ma escluso dal deploy.
+# Non aggiungere ai/ qui. Vedi ai/README.md per le
+# istruzioni di esclusione dagli script di deploy.
+
+# ============================================================
+# COVERAGE E TEST OUTPUT
+# ============================================================
+coverage/
+*.lcov
+clover.xml
+junit.xml
+
+# ============================================================
+# PACKAGE MANAGERS
+# ============================================================
+# npm/yarn lock files — mantenere nel repo
+# NON escludere package-lock.json o yarn.lock
 .npm
-.eslintcache
+.yarn/cache
+.yarn/unplugged
+.pnp.*
 
-# =============================================
-# Python
-# =============================================
-.Python
-*.egg
-*.egg-info
-dist
-build
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.hypothesis/
-
-# =============================================
-# Editor lock files
-# =============================================
-*.lock
-package-lock.json
-composer.lock (NOT ignored — dependencies should be locked)
+# Composer lock — mantenere nel repo
+# NON escludere composer.lock

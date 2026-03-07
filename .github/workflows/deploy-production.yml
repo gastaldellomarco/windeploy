@@ -1,0 +1,91 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'VERSION'
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Ubuntu 24 (windeploy.mavcoo.it)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Frontend Build ──────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_API_URL: https://api.windeploy.mavcoo.it
+
+      # ── Deploy via SSH ──────────────────────
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+            cd /var/www/windeploy
+
+            # Pull latest code
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Backend: install dependencies
+            cd backend
+            composer install --optimize-autoloader --no-dev --no-interaction
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            php artisan migrate --force
+
+            # Restart PHP-FPM
+            sudo systemctl reload php8.3-fpm
+
+            # Reload Nginx
+            sudo nginx -t && sudo systemctl reload nginx
+
+            echo "Deploy completato: $(date)"
+
+      # ── Copia frontend build ─────────────────
+      - name: Copy frontend build to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          source: "frontend/dist/*"
+          target: "/var/www/windeploy/frontend/dist"
+          strip_components: 2
+
+      - name: Notify deploy status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Deploy production completato con successo"
+          else
+            echo "❌ Deploy production fallito"
+          fi
